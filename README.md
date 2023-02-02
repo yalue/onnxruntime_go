@@ -36,9 +36,11 @@ Example Usage
 
 The following example illustrates how this library can be used to load and run
 an ONNX network taking a single input tensor and producing a single output
-tensor, both of which contain 32-bit floating point values.
+tensor, both of which contain 32-bit floating point values.  Note that error
+handling is omitted; each of the functions returns an err value, which will be
+non-nil in the case of failure.
 
-```
+```go
 import (
     "fmt"
     "github.com/yalue/onnxruntime"
@@ -51,36 +53,22 @@ func main() {
     onnxruntime.SetSharedLibraryPath("path/to/onnxruntime.so")
 
     err := onnxruntime.InitializeEnvironment()
-    if err != nil {
-        fmt.Printf("Failed initializing onnxruntime: %s\n", err)
-        os.Exit(1)
-    }
     defer onnxruntime.CleanupEnvironment()
 
     // We'll assume that network.onnx takes a single 2x3x4 input tensor and
-    // produces a 1x2x2 output tensor.
-    inputShape := []int64{1, 2, 3}
-    outputShape := []int64{1, 2, 2}
+    // produces a 1x2x3 output tensor.
     session, err := onnxruntime.CreateSimpleSession("path/to/network.onnx",
-        inputShape, outputShape)
-    if err != nil {
-        fmt.Printf("Error creating session: %s\n", err)
-        os.Exit(1)
-    }
+        onnxruntime.NewShape(2, 3, 4), onnxruntime.NewShape(1, 2, 3))
     defer session.Destroy()
 
     // Network inputs must be provided as flattened slices of floats. Run() can
     // be called as many times as necessary with a single session.
-    err := session.Run([]float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6})
-    if err != nil {
-        fmt.Printf("Error running the network: %s\n", err)
-        os.Exit(1)
-    }
+    err = session.Run([]float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7})
 
-    // This will be a flattened slice containing the elements in the 1x2x2
-    // output tensor.
-    results := session.Results()
-
+    // This will copy the result tensor into a flattened float32 slice.
+    outputShape, err := session.OutputShape()
+    results := make([]float32, outputShape.FlattenedSize())
+    err = session.CopyResults(results)
 
     // ...
 }

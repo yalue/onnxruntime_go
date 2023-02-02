@@ -13,7 +13,11 @@ func run() int {
 	if runtime.GOOS == "windows" {
 		onnxruntime.SetSharedLibraryPath("../test_data/onnxruntime.dll")
 	} else {
-		onnxruntime.SetSharedLibraryPath("../test_data/onnxruntime.so")
+		if runtime.GOARCH == "arm64" {
+			onnxruntime.SetSharedLibraryPath("../test_data/onnxruntime_arm64.so")
+		} else {
+			onnxruntime.SetSharedLibraryPath("../test_data/onnxruntime.so")
+		}
 	}
 	e := onnxruntime.InitializeEnvironment()
 	if e != nil {

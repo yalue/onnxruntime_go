@@ -26,17 +26,39 @@ extern "C" {
 // pointer. Intended to be called from Go. Returns nonzero on error.
 int SetAPIFromBase(OrtApiBase *api_base);
 
-// Wraps calling ort_api->ReleaseStatus(status)
+// Wraps ort_api->ReleaseStatus(status)
 void ReleaseOrtStatus(OrtStatus *status);
 
 // Wraps calling ort_api->CreateEnv. Returns a non-NULL status on error.
 OrtStatus *CreateOrtEnv(char *name, OrtEnv **env);
 
-// Releases the given OrtEnv.
+// Wraps ort_api->ReleaseEnv
 void ReleaseOrtEnv(OrtEnv *env);
+
+// Wraps ort_api->CreateCpuMemoryInfo with some basic, default settings.
+OrtStatus *CreateOrtMemoryInfo(OrtMemoryInfo **mem_info);
+
+// Wraps ort_api->ReleaseMemoryInfo
+void ReleaseOrtMemoryInfo(OrtMemoryInfo *info);
 
 // Returns the message associated with the given ORT status.
 const char *GetErrorMessage(OrtStatus *status);
+
+// Creates a "simple" session with a single input and single output.
+OrtStatus *CreateSimpleSession(void *model_data, size_t model_data_length,
+  OrtEnv *env, OrtSession **out);
+
+// Wraps ort_api->ReleaseSession
+void ReleaseOrtSession(OrtSession *session);
+
+// Used to free OrtValue instances, such as tensors.
+void ReleaseOrtValue(OrtValue *value);
+
+// Creates an OrtValue tensor with the given shape, and backed by the user-
+// supplied data buffer.
+OrtStatus *CreateOrtTensorWithShape(void *data, size_t data_size,
+  int64_t *shape, int64_t shape_size, OrtMemoryInfo *mem_info,
+  ONNXTensorElementDataType dtype, OrtValue **out);
 
 #ifdef __cplusplus
 }  // extern "C"
