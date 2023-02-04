@@ -44,13 +44,15 @@ void ReleaseOrtMemoryInfo(OrtMemoryInfo *info);
 // Returns the message associated with the given ORT status.
 const char *GetErrorMessage(OrtStatus *status);
 
-// Creates a "simple" session with a single input and single output.
-OrtStatus *CreateSimpleSession(void *model_data, size_t model_data_length,
+// Creates an ORT session using the given model.
+OrtStatus *CreateSession(void *model_data, size_t model_data_length,
   OrtEnv *env, OrtSession **out);
 
-// Runs a session with single, user-allocated, input and output tensors.
-OrtStatus *RunSimpleSession(OrtSession *session, OrtValue *input,
-  OrtValue *output);
+// Runs an ORT session with the given input and output tensors, along with
+// their names. In our use case, outputs must NOT be NULL.
+OrtStatus *RunOrtSession(OrtSession *session,
+  OrtValue **inputs, char **input_names, int input_count,
+  OrtValue **outputs, char **output_names, int output_count);
 
 // Wraps ort_api->ReleaseSession
 void ReleaseOrtSession(OrtSession *session);

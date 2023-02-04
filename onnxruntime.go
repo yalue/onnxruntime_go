@@ -213,18 +213,45 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 	return &toReturn, nil
 }
 
-// A simple wrapper around the OrtSession C struct. Requires the user to
-// maintain all input and output tensors, and to use the same data type for
-// input and output tensors.
-type SimpleSession[T TensorData] struct {
+// A wrapper around the OrtSession C struct. Requires the user to maintain all
+// input and output tensors, and to use the same data type for input and output
+// tensors.
+type Session[T TensorData] struct {
 	ortSession *C.OrtSession
+	// We convert the tensor names to C strings only once, and keep them around
+	// here for future calls to Run().
+	inputNames  []*C.char
+	outputNames []*C.char
+	// We only actually keep around the OrtValue pointers from the tensors.
+	inputs  []*C.OrtValue
+	outputs []*C.OrtValue
 }
 
-// Loads the ONNX network at the given path, and initializes a SimpleSession
+// Loads the ONNX network at the given path, and initializes a Session
 // instance. If this returns successfully, the caller must call Destroy() on
-// the returned session when it is no longer needed.
-func NewSimpleSession[T TensorData](onnxFilePath string) (*SimpleSession[T],
-	error) {
+// the returned session when it is no longer needed. We require the user to
+// provide the input and output tensors and names at this point, in order to
+// not need to re-allocate them every time Run() is called. The user instead
+// can just update or access the input/output tensor data after calling Run().
+// The input and output tensors MUST outlive this session, and calling
+// session.Destroy() will not destroy the input or output tensors.
+func NewSession[T TensorData](onnxFilePath string, inputNames,
+	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("No inputs were provided")
+	}
+	if len(outputs) == 0 {
+		return nil, fmt.Errorf("No outputs were provided")
+	}
+	if len(inputs) != len(inputNames) {
+		return nil, fmt.Errorf("Got %d input tensors, but %d input names",
+			len(inputs), len(inputNames))
+	}
+	if len(outputs) != len(outputNames) {
+		return nil, fmt.Errorf("Got %d output tensors, but %d output names",
+			len(outputs), len(outputNames))
+	}
+
 	// We load content this way in order to avoid a mess of wide-character
 	// paths on Windows if we use CreateSession rather than
 	// CreateSessionFromArray.
@@ -233,7 +260,7 @@ func NewSimpleSession[T TensorData](onnxFilePath string) (*SimpleSession[T],
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
 	}
 	var ortSession *C.OrtSession
-	status := C.CreateSimpleSession(unsafe.Pointer(&(fileContent[0])),
+	status := C.CreateSession(unsafe.Pointer(&(fileContent[0])),
 		C.size_t(len(fileContent)), ortEnv, &ortSession)
 	if status != nil {
 		return nil, fmt.Errorf("Error creating session from %s: %w",
@@ -242,29 +269,59 @@ func NewSimpleSession[T TensorData](onnxFilePath string) (*SimpleSession[T],
 	// ONNXRuntime copies the file content unless a specific flag is provided
 	// when creating the session (and we don't provide it!)
 	fileContent = nil
-	return &SimpleSession[T]{
-		ortSession: ortSession,
+
+	// Collect the inputs and outputs, along with their names, into a format
+	// more convenient for passing to the Run() function in the C API.
+	cInputNames := make([]*C.char, len(inputNames))
+	cOutputNames := make([]*C.char, len(outputNames))
+	for i, v := range inputNames {
+		cInputNames[i] = C.CString(v)
+	}
+	for i, v := range outputNames {
+		cOutputNames[i] = C.CString(v)
+	}
+	inputOrtTensors := make([]*C.OrtValue, len(inputs))
+	outputOrtTensors := make([]*C.OrtValue, len(outputs))
+	for i, v := range inputs {
+		inputOrtTensors[i] = v.ortValue
+	}
+	for i, v := range outputs {
+		outputOrtTensors[i] = v.ortValue
+	}
+	return &Session[T]{
+		ortSession:  ortSession,
+		inputNames:  cInputNames,
+		outputNames: cOutputNames,
+		inputs:      inputOrtTensors,
+		outputs:     outputOrtTensors,
 	}, nil
 }
 
-func (s *SimpleSession[_]) Destroy() error {
+func (s *Session[_]) Destroy() error {
 	if s.ortSession != nil {
 		C.ReleaseOrtSession(s.ortSession)
 		s.ortSession = nil
 	}
+	for i := range s.inputNames {
+		C.free(unsafe.Pointer(s.inputNames[i]))
+	}
+	s.inputNames = nil
+	for i := range s.outputNames {
+		C.free(unsafe.Pointer(s.outputNames[i]))
+	}
+	s.outputNames = nil
+	s.inputs = nil
+	s.outputs = nil
 	return nil
 }
 
-// This function assumes the SimpleSession takes a single input tensor and
-// produces a single output, both of which have the same type.
-func (s *SimpleSession[T]) SimpleRun(input *Tensor[T],
-	output *Tensor[T]) error {
-	status := C.RunSimpleSession(s.ortSession, input.ortValue,
-		output.ortValue)
+// Runs the session, updating the contents of the output tensors on success.
+func (s *Session[T]) Run() error {
+	status := C.RunOrtSession(s.ortSession, &s.inputs[0], &s.inputNames[0],
+		C.int(len(s.inputs)), &s.outputs[0], &s.outputNames[0],
+		C.int(len(s.outputs)))
 	if status != nil {
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
 	return nil
 }
-
-// TODO (next): Test SimpleRun
