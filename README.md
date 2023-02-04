@@ -20,6 +20,8 @@ shared library, removing any dependency on the `onnxruntime` source code beyond
 the header files.  Naturally, this approach works equally well on non-Windows
 systems.
 
+Additionally, this library uses Go's recent addition of generics to support
+multiple Tensor data types; see the `NewTensor` or `NewEmptyTensor` functions.
 
 Requirements
 ------------
