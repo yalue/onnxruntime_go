@@ -55,32 +55,33 @@ func main() {
     err := onnxruntime.InitializeEnvironment()
     defer onnxruntime.DestroyEnvironment()
 
-    // We'll assume that network.onnx takes a single 2x3x4 input tensor and
-    // produces a 1x2x3 output tensor.
-    session, err := onnxruntime.CreateSimpleSession("path/to/network.onnx",
-        onnxruntime.NewShape(2, 3, 4), onnxruntime.NewShape(1, 2, 3))
+    // To make it easier to work with the C API, this library requires the user
+    // to create all input and output tensors prior to creating the session.
+    inputData := []float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
+    inputShape := onnxruntime.Shape([]int64{2, 5})
+    inputTensor, err := onnxruntime.NewTensor(inputShape, inputData)
+    defer inputTensor.Destroy()
+    // This hypothetical network maps a 2x5 input -> 2x3x4 output.
+    outputShape := onnxruntime.Shape([]int64{2, 3, 4})
+    outputTensor, err := onnxruntime.NewEmptyTensor[float32](outputShape)
+    defer outputTensor.Destroy()
+
+    session, err := onnxruntime.NewSession[float32]("path/to/network.onnx",
+        []string{"Input 1 Name"}, []string{"Output 1 Name"},
+        []*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
     defer session.Destroy()
 
-    // Network inputs must be provided as flattened slices of floats. Run() can
-    // be called as many times as necessary with a single session.
-    err = session.Run([]float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7})
+    // Calling Run() will run the network, reading the current contents of the
+    // input tensors and modifying the contents of the output tensors. Simply
+    // modify the input tensor's data (available via inputTensor.GetData())
+    // before calling Run().
+    err = session.Run()
 
-    // This will copy the result tensor into a flattened float32 slice.
-    outputShape, err := session.OutputShape()
-    results := make([]float32, outputShape.FlattenedSize())
-    err = session.CopyResults(results)
+    outputData := outputTensor.GetData()
 
     // ...
 }
 ```
-
-Full Documentation
-------------------
-
-The above example uses a single input and produces a single output, all with
-`float32` data.  The `CreateSimpleSession` function supports this, as it is
-expected to be a common use case.  However, the library supports far more
-options, i.e. using the `CreateSession` function when setting up a session.
 
 The full documentation can be found at [pkg.go.dev](https://pkg.go.dev/github.com/yalue/onnxruntime).
 
