@@ -6,6 +6,7 @@ package onnxruntime
 
 import (
 	"fmt"
+	"os"
 	"unsafe"
 )
 
@@ -161,6 +162,13 @@ func (t *Tensor[_]) GetShape() Shape {
 	return t.shape.Clone()
 }
 
+// Makes a deep copy of the tensor, including its ONNXRuntime value. The Tensor
+// returned by this function must be destroyed when no longer needed.
+func (t *Tensor[T]) Clone() (*Tensor[T], error) {
+	// TODO: Implement Tensor.Clone()
+	return nil, fmt.Errorf("Not yet implemented")
+}
+
 // Creates a new empty tensor with the given shape. The shape provided to this
 // function is copied, and is no longer needed after this function returns.
 func NewEmptyTensor[T TensorData](s Shape) (*Tensor[T], error) {
@@ -187,8 +195,8 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 	dataType := GetTensorElementDataType[T]()
 	dataSize := unsafe.Sizeof(data[0]) * uintptr(elementCount)
 
-	status := C.CreateOrtTensorWithShape(unsafe.Pointer(&(data[0])),
-		C.size_t(dataSize), (*C.int64_t)(unsafe.Pointer(&(s[0]))),
+	status := C.CreateOrtTensorWithShape(unsafe.Pointer(&data[0]),
+		C.size_t(dataSize), (*C.int64_t)(unsafe.Pointer(&s[0])),
 		C.int64_t(len(s)), ortMemoryInfo, dataType, &ortValue)
 	if status != nil {
 		return nil, fmt.Errorf("ORT API error creating tensor: %s",
@@ -200,42 +208,63 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 		shape:    s.Clone(),
 		ortValue: ortValue,
 	}
+	// TODO (next): Set a finalizer on new Tensors.
+	// - Idea: use a "destroyable" interface
 	return &toReturn, nil
-
 }
 
-// The Session type, generally speaking, wraps operations supported by the
-// OrtSession struct in the C API, such as actually executing the network. We
-// define it as an interface here.
-type Session interface {
-	// Executes the neural network, using the given (flattened) input data. The
-	// size of the input data must match the input size specified when the
-	// Session was created.
-	Run(input []float32) error
-
-	// Returns the shape of the output tensor obtained by running the network.
-	// Returns an error if one occurs, including if the network hasn't been run
-	// yet (i.e. the output shape is still unknown).
-	OutputShape() (Shape, error)
-
-	// Returns a slice of results of the neural network's most recent
-	// execution. Note that the slice returned by this may change the next time
-	// the neural network is run (as calling Run() typically shouldn't result
-	// in re-allocating the result slice).
-	GetResults() ([]float32, error)
-
-	// Copies the results of the neural network's execution into the given
-	// slice.
-	CopyResults(dst []float32) error
-
-	// Destroys the Session, cleaning up resources. Must be called when the
-	// session is no longer needed.
-	Destroy() error
+// A simple wrapper around the OrtSession C struct. Requires the user to
+// maintain all input and output tensors, and to use the same data type for
+// input and output tensors.
+type SimpleSession[T TensorData] struct {
+	ortSession *C.OrtSession
 }
 
-// TODO (next): Keep implementing CreateSimpleSession.
-// - Allocate input and output tensors.
-// - Implement and use the CreateTensorWithShape function in onnxruntime_wrapper.c.
-// - When calling Run() it will likely be an error if the tensors are the wrong shape!!
+// Loads the ONNX network at the given path, and initializes a SimpleSession
+// instance. If this returns successfully, the caller must call Destroy() on
+// the returned session when it is no longer needed.
+func NewSimpleSession[T TensorData](onnxFilePath string) (*SimpleSession[T],
+	error) {
+	// We load content this way in order to avoid a mess of wide-character
+	// paths on Windows if we use CreateSession rather than
+	// CreateSessionFromArray.
+	fileContent, e := os.ReadFile(onnxFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+	}
+	var ortSession *C.OrtSession
+	status := C.CreateSimpleSession(unsafe.Pointer(&(fileContent[0])),
+		C.size_t(len(fileContent)), ortEnv, &ortSession)
+	if status != nil {
+		return nil, fmt.Errorf("Error creating session from %s: %w",
+			onnxFilePath, statusToError(status))
+	}
+	// ONNXRuntime copies the file content unless a specific flag is provided
+	// when creating the session (and we don't provide it!)
+	fileContent = nil
+	return &SimpleSession[T]{
+		ortSession: ortSession,
+	}, nil
+}
 
-// We'll also allocate the input data and set up the input tensor here.
+func (s *SimpleSession[_]) Destroy() error {
+	if s.ortSession != nil {
+		C.ReleaseOrtSession(s.ortSession)
+		s.ortSession = nil
+	}
+	return nil
+}
+
+// This function assumes the SimpleSession takes a single input tensor and
+// produces a single output, both of which have the same type.
+func (s *SimpleSession[T]) SimpleRun(input *Tensor[T],
+	output *Tensor[T]) error {
+	status := C.RunSimpleSession(s.ortSession, input.ortValue,
+		output.ortValue)
+	if status != nil {
+		return fmt.Errorf("Error running network: %w", statusToError(status))
+	}
+	return nil
+}
+
+// TODO (next): Test SimpleRun

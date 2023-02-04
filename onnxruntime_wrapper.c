@@ -48,6 +48,17 @@ OrtStatus *CreateSimpleSession(void *model_data, size_t model_data_length,
   return status;
 }
 
+OrtStatus *RunSimpleSession(OrtSession *session, OrtValue *input,
+  OrtValue *output) {
+  // TODO (next): We actually *do* need to pass in these dang input names.
+  const char *input_name[] = {"1x4 Input Vector"};
+  const char *output_name[] = {"1x2 Output Vector"};
+  OrtStatus *status = NULL;
+  status = ort_api->Run(session, NULL, input_name,
+    (const OrtValue* const*) &input, 1, output_name, 1, &output);
+  return status;
+}
+
 void ReleaseOrtSession(OrtSession *session) {
   ort_api->ReleaseSession(session);
 }

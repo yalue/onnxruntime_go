@@ -48,6 +48,10 @@ const char *GetErrorMessage(OrtStatus *status);
 OrtStatus *CreateSimpleSession(void *model_data, size_t model_data_length,
   OrtEnv *env, OrtSession **out);
 
+// Runs a session with single, user-allocated, input and output tensors.
+OrtStatus *RunSimpleSession(OrtSession *session, OrtValue *input,
+  OrtValue *output);
+
 // Wraps ort_api->ReleaseSession
 void ReleaseOrtSession(OrtSession *session);
 
