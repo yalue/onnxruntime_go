@@ -53,7 +53,7 @@ func main() {
     onnxruntime.SetSharedLibraryPath("path/to/onnxruntime.so")
 
     err := onnxruntime.InitializeEnvironment()
-    defer onnxruntime.CleanupEnvironment()
+    defer onnxruntime.DestroyEnvironment()
 
     // We'll assume that network.onnx takes a single 2x3x4 input tensor and
     // produces a 1x2x3 output tensor.

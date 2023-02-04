@@ -82,7 +82,7 @@ func TestTensorTypes(t *testing.T) {
 
 func TestCreateTensor(t *testing.T) {
 	InitializeRuntime(t)
-	defer CleanupEnvironment()
+	defer DestroyEnvironment()
 	s := NewShape(1, 2, 3)
 	tensor1, e := NewEmptyTensor[uint8](s)
 	if e != nil {
@@ -135,6 +135,13 @@ func TestCreateTensor(t *testing.T) {
 
 func TestExampleNetwork(t *testing.T) {
 	InitializeRuntime(t)
+	defer func() {
+		e := DestroyEnvironment()
+		if e != nil {
+			t.Logf("Error cleaning up environment: %s\n", e)
+			t.FailNow()
+		}
+	}()
 
 	// Create input and output tensors
 	inputs := parseInputsJSON("test_data/example_network_results.json", t)
@@ -167,12 +174,6 @@ func TestExampleNetwork(t *testing.T) {
 	e = floatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
 	if e != nil {
 		t.Logf("The neural network didn't produce the correct result: %s\n", e)
-		t.FailNow()
-	}
-
-	e = CleanupEnvironment()
-	if e != nil {
-		t.Logf("Failed cleaning up the environment: %s\n", e)
 		t.FailNow()
 	}
 }

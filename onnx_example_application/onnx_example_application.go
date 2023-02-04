@@ -52,6 +52,14 @@ func run() int {
 		return 1
 	}
 	fmt.Printf("The onnxruntime environment initialized OK.\n")
+	defer func() {
+		e := onnxruntime.DestroyEnvironment()
+		if e != nil {
+			fmt.Printf("Error destroying onnx environment: %s\n", e)
+		} else {
+			fmt.Printf("Environment cleaned up OK.\n")
+		}
+	}()
 
 	// Load the JSON with the test input and output data.
 	testInputs, e := loadInputsJSON(
@@ -98,15 +106,6 @@ func run() int {
 		fmt.Printf("Output value %d: expected %f, got %f\n", i,
 			outputTensor.GetData()[i], testInputs.FlattenedOutput[i])
 	}
-
-	// Ordinarily, it is probably fine to call this using defer, but we do it
-	// here just so we can print a status message after the cleanup completes.
-	e = onnxruntime.CleanupEnvironment()
-	if e != nil {
-		fmt.Printf("Error cleaning up the environment: %s\n", e)
-		return 1
-	}
-	fmt.Printf("The onnxruntime environment was cleaned up OK.\n")
 	return 0
 }
 

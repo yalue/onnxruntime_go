@@ -48,7 +48,7 @@ func SetSharedLibraryPath(path string) {
 
 // Call this function to initialize the internal onnxruntime environment. If
 // this doesn't return an error, the caller will be responsible for calling
-// CleanupEnvironment to free the onnxruntime state when no longer needed.
+// DestroyEnvironment to free the onnxruntime state when no longer needed.
 func InitializeEnvironment() error {
 	if ortEnv != nil {
 		return fmt.Errorf("The onnxruntime has already been initialized")
@@ -69,7 +69,7 @@ func InitializeEnvironment() error {
 
 	status = C.CreateOrtMemoryInfo(&ortMemoryInfo)
 	if status != nil {
-		CleanupEnvironment()
+		DestroyEnvironment()
 		return fmt.Errorf("Error creating ORT memory info: %w",
 			statusToError(status))
 	}
@@ -79,7 +79,7 @@ func InitializeEnvironment() error {
 
 // Call this function to cleanup the internal onnxruntime environment when it
 // is no longer needed.
-func CleanupEnvironment() error {
+func DestroyEnvironment() error {
 	var e error
 	if ortMemoryInfo != nil {
 		C.ReleaseOrtMemoryInfo(ortMemoryInfo)
