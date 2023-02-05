@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-// #cgo CFLAGS: -I${SRCDIR}/onnxruntime/include
+// #cgo CFLAGS: -O2 -g
 //
 // #include "onnxruntime_wrapper.h"
 import "C"
@@ -227,15 +227,9 @@ type Session[T TensorData] struct {
 	outputs []*C.OrtValue
 }
 
-// Loads the ONNX network at the given path, and initializes a Session
-// instance. If this returns successfully, the caller must call Destroy() on
-// the returned session when it is no longer needed. We require the user to
-// provide the input and output tensors and names at this point, in order to
-// not need to re-allocate them every time Run() is called. The user instead
-// can just update or access the input/output tensor data after calling Run().
-// The input and output tensors MUST outlive this session, and calling
-// session.Destroy() will not destroy the input or output tensors.
-func NewSession[T TensorData](onnxFilePath string, inputNames,
+// The same as NewSession, but takes a slice of bytes containing the .onnx
+// network rather than a file path.
+func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
 	if len(inputs) == 0 {
 		return nil, fmt.Errorf("No inputs were provided")
@@ -252,23 +246,15 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 			len(outputs), len(outputNames))
 	}
 
-	// We load content this way in order to avoid a mess of wide-character
-	// paths on Windows if we use CreateSession rather than
-	// CreateSessionFromArray.
-	fileContent, e := os.ReadFile(onnxFilePath)
-	if e != nil {
-		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
-	}
 	var ortSession *C.OrtSession
-	status := C.CreateSession(unsafe.Pointer(&(fileContent[0])),
-		C.size_t(len(fileContent)), ortEnv, &ortSession)
+	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
+		C.size_t(len(onnxData)), ortEnv, &ortSession)
 	if status != nil {
-		return nil, fmt.Errorf("Error creating session from %s: %w",
-			onnxFilePath, statusToError(status))
+		return nil, fmt.Errorf("Error creating session: %w",
+			statusToError(status))
 	}
 	// ONNXRuntime copies the file content unless a specific flag is provided
 	// when creating the session (and we don't provide it!)
-	fileContent = nil
 
 	// Collect the inputs and outputs, along with their names, into a format
 	// more convenient for passing to the Run() function in the C API.
@@ -295,6 +281,30 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 		inputs:      inputOrtTensors,
 		outputs:     outputOrtTensors,
 	}, nil
+}
+
+// Loads the ONNX network at the given path, and initializes a Session
+// instance. If this returns successfully, the caller must call Destroy() on
+// the returned session when it is no longer needed. We require the user to
+// provide the input and output tensors and names at this point, in order to
+// not need to re-allocate them every time Run() is called. The user instead
+// can just update or access the input/output tensor data after calling Run().
+// The input and output tensors MUST outlive this session, and calling
+// session.Destroy() will not destroy the input or output tensors.
+func NewSession[T TensorData](onnxFilePath string, inputNames,
+	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+	fileContent, e := os.ReadFile(onnxFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+	}
+
+	toReturn, e := NewSessionWithONNXData[T](fileContent, inputNames,
+		outputNames, inputs, outputs)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating session from %s: %w",
+			onnxFilePath, e)
+	}
+	return toReturn, nil
 }
 
 func (s *Session[_]) Destroy() error {
