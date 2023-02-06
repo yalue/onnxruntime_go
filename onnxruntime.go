@@ -25,6 +25,9 @@ var ortEnv *C.OrtEnv
 // allocations for now.
 var ortMemoryInfo *C.OrtMemoryInfo
 
+var NotInitializedError error = fmt.Errorf("InitializeRuntime() has either " +
+	"not yet been called, or did not return successfully")
+
 // Does two things: converts the given OrtStatus to a Go error, and releases
 // the status. If the status is nil, this does nothing and returns nil.
 func statusToError(status *C.OrtStatus) error {
@@ -46,11 +49,18 @@ func SetSharedLibraryPath(path string) {
 	onnxSharedLibraryPath = path
 }
 
+// Returns false if the onnxruntime package is not initialized. Called
+// internally by several functions, to avoid segfaulting if
+// InitializeEnvironment hasn't been called yet.
+func IsInitialized() bool {
+	return ortEnv != nil
+}
+
 // Call this function to initialize the internal onnxruntime environment. If
 // this doesn't return an error, the caller will be responsible for calling
 // DestroyEnvironment to free the onnxruntime state when no longer needed.
 func InitializeEnvironment() error {
-	if ortEnv != nil {
+	if IsInitialized() {
 		return fmt.Errorf("The onnxruntime has already been initialized")
 	}
 	// Do the windows- or linux- specific initialization first.
@@ -81,6 +91,9 @@ func InitializeEnvironment() error {
 // is no longer needed.
 func DestroyEnvironment() error {
 	var e error
+	if !IsInitialized() {
+		return NotInitializedError
+	}
 	if ortMemoryInfo != nil {
 		C.ReleaseOrtMemoryInfo(ortMemoryInfo)
 		ortMemoryInfo = nil
@@ -141,11 +154,12 @@ type Tensor[T TensorData] struct {
 }
 
 // Cleans up and frees the memory associated with this tensor.
-func (t *Tensor[_]) Destroy() {
+func (t *Tensor[_]) Destroy() error {
 	C.ReleaseOrtValue(t.ortValue)
 	t.ortValue = nil
 	t.data = nil
 	t.shape = nil
+	return nil
 }
 
 // Returns the slice containing the tensor's underlying data. The contents of
@@ -166,7 +180,7 @@ func (t *Tensor[_]) GetShape() Shape {
 // returned by this function must be destroyed when no longer needed.
 func (t *Tensor[T]) Clone() (*Tensor[T], error) {
 	// TODO: Implement Tensor.Clone()
-	return nil, fmt.Errorf("Not yet implemented")
+	return nil, fmt.Errorf("Tensor.Clone is not yet implemented")
 }
 
 // Creates a new empty tensor with the given shape. The shape provided to this
@@ -185,6 +199,10 @@ func NewEmptyTensor[T TensorData](s Shape) (*Tensor[T], error) {
 // returns. If the data slice is longer than s.FlattenedSize(), then only the
 // first portion of the data will be used.
 func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+
 	elementCount := s.FlattenedSize()
 	if elementCount > int64(len(data)) {
 		return nil, fmt.Errorf("The tensor's shape (%s) requires %d "+
@@ -208,8 +226,9 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 		shape:    s.Clone(),
 		ortValue: ortValue,
 	}
-	// TODO (next): Set a finalizer on new Tensors.
-	// - Idea: use a "destroyable" interface
+	// TODO: Set a finalizer on new Tensors to hopefully prevent careless
+	// memory leaks.
+	// - Idea: use a "destroyable" interface?
 	return &toReturn, nil
 }
 
@@ -231,6 +250,9 @@ type Session[T TensorData] struct {
 // network rather than a file path.
 func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
 	if len(inputs) == 0 {
 		return nil, fmt.Errorf("No inputs were provided")
 	}
