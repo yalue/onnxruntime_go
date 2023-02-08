@@ -2,7 +2,7 @@
 // https://github.com/microsoft/onnxruntime.  It seeks to provide as simple an
 // interface as possible to load and run ONNX-format neural networks from
 // Go code.
-package onnxruntime
+package onnxruntime_go
 
 import (
 	"fmt"

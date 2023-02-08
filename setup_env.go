@@ -1,6 +1,6 @@
 //go:build !windows
 
-package onnxruntime
+package onnxruntime_go
 
 import (
 	"fmt"
@@ -41,6 +41,9 @@ func platformCleanup() error {
 }
 
 func platformInitializeEnvironment() error {
+	if onnxSharedLibraryPath == "" {
+		onnxSharedLibraryPath = "onnxruntime.so"
+	}
 	cName := C.CString(onnxSharedLibraryPath)
 	defer C.free(unsafe.Pointer(cName))
 	handle := C.dlopen(cName, C.RTLD_LAZY)

@@ -1,6 +1,6 @@
 //go:build windows
 
-package onnxruntime
+package onnxruntime_go
 
 // This file includes the Windows-specific code for loading the onnxruntime
 // library and setting up the environment.
@@ -25,6 +25,9 @@ func platformCleanup() error {
 }
 
 func platformInitializeEnvironment() error {
+	if onnxSharedLibraryPath == "" {
+		onnxSharedLibraryPath = "onnxruntime.dll"
+	}
 	handle, e := syscall.LoadLibrary(onnxSharedLibraryPath)
 	if e != nil {
 		return fmt.Errorf("Error loading ONNX shared library \"%s\": %w",

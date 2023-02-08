@@ -1,4 +1,4 @@
-package onnxruntime
+package onnxruntime_go
 
 import (
 	"encoding/json"

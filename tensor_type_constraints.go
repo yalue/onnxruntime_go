@@ -1,4 +1,4 @@
-package onnxruntime
+package onnxruntime_go
 
 // This file contains definitions for the generic tensor data types we support.
 

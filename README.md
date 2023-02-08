@@ -45,30 +45,30 @@ non-nil in the case of failure.
 ```go
 import (
     "fmt"
-    "github.com/yalue/onnxruntime"
+    ort "github.com/yalue/onnxruntime_go"
     "os"
 )
 
 func main() {
     // This line may be optional, by default the library will try to load
     // "onnxruntime.dll" on Windows, and "onnxruntime.so" on any other system.
-    onnxruntime.SetSharedLibraryPath("path/to/onnxruntime.so")
+    ort.SetSharedLibraryPath("path/to/onnxruntime.so")
 
-    err := onnxruntime.InitializeEnvironment()
-    defer onnxruntime.DestroyEnvironment()
+    err := ort.InitializeEnvironment()
+    defer ort.DestroyEnvironment()
 
     // To make it easier to work with the C API, this library requires the user
     // to create all input and output tensors prior to creating the session.
     inputData := []float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
-    inputShape := onnxruntime.Shape([]int64{2, 5})
-    inputTensor, err := onnxruntime.NewTensor(inputShape, inputData)
+    inputShape := ort.Shape([]int64{2, 5})
+    inputTensor, err := ort.NewTensor(inputShape, inputData)
     defer inputTensor.Destroy()
     // This hypothetical network maps a 2x5 input -> 2x3x4 output.
-    outputShape := onnxruntime.Shape([]int64{2, 3, 4})
-    outputTensor, err := onnxruntime.NewEmptyTensor[float32](outputShape)
+    outputShape := ort.Shape([]int64{2, 3, 4})
+    outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
     defer outputTensor.Destroy()
 
-    session, err := onnxruntime.NewSession[float32]("path/to/network.onnx",
+    session, err := ort.NewSession[float32]("path/to/network.onnx",
         []string{"Input 1 Name"}, []string{"Output 1 Name"},
         []*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
     defer session.Destroy()
@@ -85,5 +85,5 @@ func main() {
 }
 ```
 
-The full documentation can be found at [pkg.go.dev](https://pkg.go.dev/github.com/yalue/onnxruntime).
+The full documentation can be found at [pkg.go.dev](https://pkg.go.dev/github.com/yalue/onnxruntime_go).
 
