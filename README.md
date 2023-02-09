@@ -60,11 +60,11 @@ func main() {
     // To make it easier to work with the C API, this library requires the user
     // to create all input and output tensors prior to creating the session.
     inputData := []float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
-    inputShape := ort.Shape([]int64{2, 5})
+    inputShape := ort.NewShape(2, 5)
     inputTensor, err := ort.NewTensor(inputShape, inputData)
     defer inputTensor.Destroy()
     // This hypothetical network maps a 2x5 input -> 2x3x4 output.
-    outputShape := ort.Shape([]int64{2, 3, 4})
+    outputShape := ort.NewShape(2, 3, 4)
     outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
     defer outputTensor.Destroy()
 
