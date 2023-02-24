@@ -144,6 +144,19 @@ func (s Shape) String() string {
 	return fmt.Sprintf("%v", []int64(s))
 }
 
+// Returns true if both shapes match in every dimension.
+func (s Shape) Equals(other Shape) bool {
+	if len(s) != len(other) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] != other[i] {
+			return false
+		}
+	}
+	return true
+}
+
 type Tensor[T TensorData] struct {
 	// The shape of the tensor
 	shape Shape
@@ -177,10 +190,16 @@ func (t *Tensor[_]) GetShape() Shape {
 }
 
 // Makes a deep copy of the tensor, including its ONNXRuntime value. The Tensor
-// returned by this function must be destroyed when no longer needed.
+// returned by this function must be destroyed when no longer needed. The
+// returned tensor will also no longer refer to the same underlying data; use
+// GetData() to obtain the new underlying slice.
 func (t *Tensor[T]) Clone() (*Tensor[T], error) {
-	// TODO: Implement Tensor.Clone()
-	return nil, fmt.Errorf("Tensor.Clone is not yet implemented")
+	toReturn, e := NewEmptyTensor[T](t.shape)
+	if e != nil {
+		return nil, fmt.Errorf("Error allocating tensor clone: %w", e)
+	}
+	copy(toReturn.GetData(), t.data)
+	return toReturn, nil
 }
 
 // Creates a new empty tensor with the given shape. The shape provided to this

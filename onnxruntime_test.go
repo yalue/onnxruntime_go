@@ -19,6 +19,9 @@ type testInputsInfo struct {
 
 // This must be called prior to running each test.
 func InitializeRuntime(t *testing.T) {
+	if IsInitialized() {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		SetSharedLibraryPath("test_data/onnxruntime.dll")
 	} else {
@@ -129,6 +132,39 @@ func TestCreateTensor(t *testing.T) {
 	if len(tensor2.GetData()) != 10 {
 		t.Logf("New tensor data contains %d elements, when it should "+
 			"contain 10.\n", len(tensor2.GetData()))
+		t.FailNow()
+	}
+}
+
+func TestCloneTensor(t *testing.T) {
+	InitializeRuntime(t)
+	originalData := []float32{1, 2, 3, 4}
+	originalTensor, e := NewTensor(NewShape(2, 2), originalData)
+	if e != nil {
+		t.Logf("Error creating tensor: %s\n", e)
+		t.FailNow()
+	}
+	clone, e := originalTensor.Clone()
+	if e != nil {
+		t.Logf("Error cloning tensor: %s\n", e)
+		t.FailNow()
+	}
+	if !clone.GetShape().Equals(originalTensor.GetShape()) {
+		t.Logf("Clone shape (%s) doesn't match original shape (%s)\n",
+			clone.GetShape(), originalTensor.GetShape())
+		t.FailNow()
+	}
+	cloneData := clone.GetData()
+	for i := range originalData {
+		if cloneData[i] != originalData[i] {
+			t.Logf("Clone data incorrect at index %d: %f (expected %f)\n",
+				i, cloneData[i], originalData[i])
+			t.FailNow()
+		}
+	}
+	cloneData[2] = 1337
+	if originalData[2] != 3 {
+		t.Logf("Modifying clone data effected the original.\n")
 		t.FailNow()
 	}
 }
