@@ -321,10 +321,10 @@ type Session[T TensorData, T1 TensorData] struct {
 	outputs []*C.OrtValue
 }
 
-// The same as NewSession, but takes a slice of bytes containing the .onnx
-// network rather than a file path.
-func NewSessionWithONNXDataWithOutputType[T TensorData, T1 TensorData](onnxData []byte, inputNames,
+// Actually creates te sessions
+func createSession[T TensorData, T1 TensorData](onnxData []byte, inputNames,
 	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T1]) (*Session[T, T1], error) {
+
 	if !IsInitialized() {
 		return nil, NotInitializedError
 	}
@@ -380,6 +380,13 @@ func NewSessionWithONNXDataWithOutputType[T TensorData, T1 TensorData](onnxData 
 	}, nil
 }
 
+// The same as NewSessionWithOutputType, but takes a slice of bytes containing the .onnx
+// network rather than a file path.
+func NewSessionWithONNXDataWithOutputType[T TensorData, T1 TensorData](onnxData []byte, inputNames,
+	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T1]) (*Session[T, T1], error) {
+	return createSession[T, T1](onnxData, inputNames, outputNames, inputs, outputs)
+}
+
 // Loads the ONNX network at the given path, and initializes a Session
 // instance. If this returns successfully, the caller must call Destroy() on
 // the returned session when it is no longer needed. We require the user to
@@ -396,7 +403,7 @@ func NewSessionWithOutputType[T TensorData, T1 TensorData](onnxFilePath string, 
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
 	}
 
-	toReturn, e := NewSessionWithONNXDataWithOutputType[T](fileContent, inputNames,
+	toReturn, e := NewSessionWithONNXDataWithOutputType(fileContent, inputNames,
 		outputNames, inputs, outputs)
 	if e != nil {
 		return nil, fmt.Errorf("Error creating session from %s: %w",
@@ -409,59 +416,7 @@ func NewSessionWithOutputType[T TensorData, T1 TensorData](onnxFilePath string, 
 // network rather than a file path.
 func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T]) (*Session[T, T], error) {
-	if !IsInitialized() {
-		return nil, NotInitializedError
-	}
-	if len(inputs) == 0 {
-		return nil, fmt.Errorf("No inputs were provided")
-	}
-	if len(outputs) == 0 {
-		return nil, fmt.Errorf("No outputs were provided")
-	}
-	if len(inputs) != len(inputNames) {
-		return nil, fmt.Errorf("Got %d input tensors, but %d input names",
-			len(inputs), len(inputNames))
-	}
-	if len(outputs) != len(outputNames) {
-		return nil, fmt.Errorf("Got %d output tensors, but %d output names",
-			len(outputs), len(outputNames))
-	}
-
-	var ortSession *C.OrtSession
-	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
-		C.size_t(len(onnxData)), ortEnv, &ortSession)
-	if status != nil {
-		return nil, fmt.Errorf("Error creating session: %w",
-			statusToError(status))
-	}
-	// ONNXRuntime copies the file content unless a specific flag is provided
-	// when creating the session (and we don't provide it!)
-
-	// Collect the inputs and outputs, along with their names, into a format
-	// more convenient for passing to the Run() function in the C API.
-	cInputNames := make([]*C.char, len(inputNames))
-	cOutputNames := make([]*C.char, len(outputNames))
-	for i, v := range inputNames {
-		cInputNames[i] = C.CString(v)
-	}
-	for i, v := range outputNames {
-		cOutputNames[i] = C.CString(v)
-	}
-	inputOrtTensors := make([]*C.OrtValue, len(inputs))
-	outputOrtTensors := make([]*C.OrtValue, len(outputs))
-	for i, v := range inputs {
-		inputOrtTensors[i] = v.ortValue
-	}
-	for i, v := range outputs {
-		outputOrtTensors[i] = v.ortValue
-	}
-	return &Session[T, T]{
-		ortSession:  ortSession,
-		inputNames:  cInputNames,
-		outputNames: cOutputNames,
-		inputs:      inputOrtTensors,
-		outputs:     outputOrtTensors,
-	}, nil
+	return createSession[T, T](onnxData, inputNames, outputNames, inputs, outputs)
 }
 
 // Loads the ONNX network at the given path, and initializes a Session
@@ -479,7 +434,7 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
 	}
 
-	toReturn, e := NewSessionWithONNXData[T](fileContent, inputNames,
+	toReturn, e := NewSessionWithONNXData(fileContent, inputNames,
 		outputNames, inputs, outputs)
 	if e != nil {
 		return nil, fmt.Errorf("Error creating session from %s: %w",
