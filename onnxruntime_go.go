@@ -323,7 +323,7 @@ type Session[T TensorData, T1 TensorData] struct {
 
 // The same as NewSession, but takes a slice of bytes containing the .onnx
 // network rather than a file path.
-func NewSessionWithONNXData[T TensorData, T1 TensorData](onnxData []byte, inputNames,
+func NewSessionWithONNXDataWithOutputType[T TensorData, T1 TensorData](onnxData []byte, inputNames,
 	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T1]) (*Session[T, T1], error) {
 	if !IsInitialized() {
 		return nil, NotInitializedError
@@ -388,8 +388,92 @@ func NewSessionWithONNXData[T TensorData, T1 TensorData](onnxData []byte, inputN
 // can just update or access the input/output tensor data after calling Run().
 // The input and output tensors MUST outlive this session, and calling
 // session.Destroy() will not destroy the input or output tensors.
-func NewSession[T TensorData, T1 TensorData](onnxFilePath string, inputNames,
+// This allows for having two different types for the input and output tensors.
+func NewSessionWithOutputType[T TensorData, T1 TensorData](onnxFilePath string, inputNames,
 	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T1]) (*Session[T, T1], error) {
+	fileContent, e := os.ReadFile(onnxFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+	}
+
+	toReturn, e := NewSessionWithONNXDataWithOutputType[T](fileContent, inputNames,
+		outputNames, inputs, outputs)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating session from %s: %w",
+			onnxFilePath, e)
+	}
+	return toReturn, nil
+}
+
+// The same as NewSession, but takes a slice of bytes containing the .onnx
+// network rather than a file path.
+func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
+	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T]) (*Session[T, T], error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("No inputs were provided")
+	}
+	if len(outputs) == 0 {
+		return nil, fmt.Errorf("No outputs were provided")
+	}
+	if len(inputs) != len(inputNames) {
+		return nil, fmt.Errorf("Got %d input tensors, but %d input names",
+			len(inputs), len(inputNames))
+	}
+	if len(outputs) != len(outputNames) {
+		return nil, fmt.Errorf("Got %d output tensors, but %d output names",
+			len(outputs), len(outputNames))
+	}
+
+	var ortSession *C.OrtSession
+	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
+		C.size_t(len(onnxData)), ortEnv, &ortSession)
+	if status != nil {
+		return nil, fmt.Errorf("Error creating session: %w",
+			statusToError(status))
+	}
+	// ONNXRuntime copies the file content unless a specific flag is provided
+	// when creating the session (and we don't provide it!)
+
+	// Collect the inputs and outputs, along with their names, into a format
+	// more convenient for passing to the Run() function in the C API.
+	cInputNames := make([]*C.char, len(inputNames))
+	cOutputNames := make([]*C.char, len(outputNames))
+	for i, v := range inputNames {
+		cInputNames[i] = C.CString(v)
+	}
+	for i, v := range outputNames {
+		cOutputNames[i] = C.CString(v)
+	}
+	inputOrtTensors := make([]*C.OrtValue, len(inputs))
+	outputOrtTensors := make([]*C.OrtValue, len(outputs))
+	for i, v := range inputs {
+		inputOrtTensors[i] = v.ortValue
+	}
+	for i, v := range outputs {
+		outputOrtTensors[i] = v.ortValue
+	}
+	return &Session[T, T]{
+		ortSession:  ortSession,
+		inputNames:  cInputNames,
+		outputNames: cOutputNames,
+		inputs:      inputOrtTensors,
+		outputs:     outputOrtTensors,
+	}, nil
+}
+
+// Loads the ONNX network at the given path, and initializes a Session
+// instance. If this returns successfully, the caller must call Destroy() on
+// the returned session when it is no longer needed. We require the user to
+// provide the input and output tensors and names at this point, in order to
+// not need to re-allocate them every time Run() is called. The user instead
+// can just update or access the input/output tensor data after calling Run().
+// The input and output tensors MUST outlive this session, and calling
+// session.Destroy() will not destroy the input or output tensors.
+func NewSession[T TensorData](onnxFilePath string, inputNames,
+	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T]) (*Session[T, T], error) {
 	fileContent, e := os.ReadFile(onnxFilePath)
 	if e != nil {
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
