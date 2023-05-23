@@ -443,7 +443,7 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 	return toReturn, nil
 }
 
-func (s *Session[T, T2]) Destroy() error {
+func (s *Session[T, T1]) Destroy() error {
 	if s.ortSession != nil {
 		C.ReleaseOrtSession(s.ortSession)
 		s.ortSession = nil
@@ -462,7 +462,7 @@ func (s *Session[T, T2]) Destroy() error {
 }
 
 // Runs the session, updating the contents of the output tensors on success.
-func (s *Session[T, T2]) Run() error {
+func (s *Session[T, T1]) Run() error {
 	status := C.RunOrtSession(s.ortSession, &s.inputs[0], &s.inputNames[0],
 		C.int(len(s.inputs)), &s.outputs[0], &s.outputNames[0],
 		C.int(len(s.outputs)))
