@@ -310,7 +310,7 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 // A wrapper around the OrtSession C struct. Requires the user to maintain all
 // input and output tensors, and to use the same data type for input and output
 // tensors.
-type Session[T TensorData] struct {
+type Session[T TensorData, T1 TensorData] struct {
 	ortSession *C.OrtSession
 	// We convert the tensor names to C strings only once, and keep them around
 	// here for future calls to Run().
@@ -323,8 +323,8 @@ type Session[T TensorData] struct {
 
 // The same as NewSession, but takes a slice of bytes containing the .onnx
 // network rather than a file path.
-func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
-	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+func NewSessionWithONNXData[T TensorData, T1 TensorData](onnxData []byte, inputNames,
+	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T1]) (*Session[T, T1], error) {
 	if !IsInitialized() {
 		return nil, NotInitializedError
 	}
@@ -371,7 +371,7 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	for i, v := range outputs {
 		outputOrtTensors[i] = v.ortValue
 	}
-	return &Session[T]{
+	return &Session[T, T1]{
 		ortSession:  ortSession,
 		inputNames:  cInputNames,
 		outputNames: cOutputNames,
@@ -388,8 +388,8 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 // can just update or access the input/output tensor data after calling Run().
 // The input and output tensors MUST outlive this session, and calling
 // session.Destroy() will not destroy the input or output tensors.
-func NewSession[T TensorData](onnxFilePath string, inputNames,
-	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+func NewSession[T TensorData, T1 TensorData](onnxFilePath string, inputNames,
+	outputNames []string, inputs []*Tensor[T], outputs []*Tensor[T1]) (*Session[T, T1], error) {
 	fileContent, e := os.ReadFile(onnxFilePath)
 	if e != nil {
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
@@ -404,7 +404,7 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 	return toReturn, nil
 }
 
-func (s *Session[_]) Destroy() error {
+func (s *Session[T, T2]) Destroy() error {
 	if s.ortSession != nil {
 		C.ReleaseOrtSession(s.ortSession)
 		s.ortSession = nil
@@ -423,7 +423,7 @@ func (s *Session[_]) Destroy() error {
 }
 
 // Runs the session, updating the contents of the output tensors on success.
-func (s *Session[T]) Run() error {
+func (s *Session[T, T2]) Run() error {
 	status := C.RunOrtSession(s.ortSession, &s.inputs[0], &s.inputNames[0],
 		C.int(len(s.inputs)), &s.outputs[0], &s.outputNames[0],
 		C.int(len(s.outputs)))
