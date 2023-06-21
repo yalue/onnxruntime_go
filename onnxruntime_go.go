@@ -93,6 +93,11 @@ func InitializeEnvironment() error {
 		return fmt.Errorf("Error creating ORT environment: %w",
 			statusToError(status))
 	}
+	status = C.DisableTelemetry(ortEnv)
+	if status != nil {
+		return fmt.Errorf("Error disabling ORT telemetry: %w",
+			statusToError(status))
+	}
 
 	status = C.CreateOrtMemoryInfo(&ortMemoryInfo)
 	if status != nil {

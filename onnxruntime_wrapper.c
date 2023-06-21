@@ -17,6 +17,10 @@ OrtStatus *CreateOrtEnv(char *name, OrtEnv **env) {
   return ort_api->CreateEnv(ORT_LOGGING_LEVEL_ERROR, name, env);
 }
 
+OrtStatus *DisableTelemetry(OrtEnv *env) {
+  return ort_api->DisableTelemetryEvents(env);
+}
+
 void ReleaseOrtEnv(OrtEnv *env) {
   ort_api->ReleaseEnv(env);
 }
