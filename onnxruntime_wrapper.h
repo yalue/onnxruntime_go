@@ -35,6 +35,9 @@ OrtStatus *CreateOrtEnv(char *name, OrtEnv **env);
 // Wraps ort_api->DisableTelemetryEvents. Returns a non-NULL status on error.
 OrtStatus *DisableTelemetry(OrtEnv *env);
 
+// Wraps ort_api->EnableTelemetryEvents. Returns a non-NULL status on error.
+OrtStatus *EnableTelemetry(OrtEnv *env);
+
 // Wraps ort_api->ReleaseEnv
 void ReleaseOrtEnv(OrtEnv *env);
 

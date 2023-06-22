@@ -21,6 +21,10 @@ OrtStatus *DisableTelemetry(OrtEnv *env) {
   return ort_api->DisableTelemetryEvents(env);
 }
 
+OrtStatus *EnableTelemetry(OrtEnv *env) {
+  return ort_api->EnableTelemetryEvents(env);
+}
+
 void ReleaseOrtEnv(OrtEnv *env) {
   ort_api->ReleaseEnv(env);
 }

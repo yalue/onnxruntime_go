@@ -93,11 +93,6 @@ func InitializeEnvironment() error {
 		return fmt.Errorf("Error creating ORT environment: %w",
 			statusToError(status))
 	}
-	status = C.DisableTelemetry(ortEnv)
-	if status != nil {
-		return fmt.Errorf("Error disabling ORT telemetry: %w",
-			statusToError(status))
-	}
 
 	status = C.CreateOrtMemoryInfo(&ortMemoryInfo)
 	if status != nil {
@@ -130,6 +125,38 @@ func DestroyEnvironment() error {
 	e = platformCleanup()
 	if e != nil {
 		return fmt.Errorf("Platform-specific cleanup failed: %w", e)
+	}
+	return nil
+}
+
+// Disables telemetry events for the onnxruntime environment. Must be called
+// after initializing the environment using InitializeEnvironment(). It is
+// unclear from the onnxruntime docs whether this will cause an error or
+// silently return if telemetry is already disabled.
+func DisableTelemetry() error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	status := C.DisableTelemetry(ortEnv)
+	if status != nil {
+		return fmt.Errorf("Error disabling onnxruntime telemetry: %w",
+			statusToError(status))
+	}
+	return nil
+}
+
+// Enables telemetry events for the onnxruntime environment. Must be called
+// after initializing the environment using InitializeEnvironment(). It is
+// unclear from the onnxruntime docs whether this will cause an error or
+// silently return if telemetry is already enabled.
+func EnableTelemetry() error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	status := C.EnableTelemetry(ortEnv)
+	if status != nil {
+		return fmt.Errorf("Error enabling onnxruntime telemetry: %w",
+			statusToError(status))
 	}
 	return nil
 }

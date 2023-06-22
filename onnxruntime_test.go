@@ -265,3 +265,30 @@ func TestExampleNetwork(t *testing.T) {
 		t.FailNow()
 	}
 }
+
+func TestEnableDisableTelemetry(t *testing.T) {
+	InitializeRuntime(t)
+	defer func() {
+		e := DestroyEnvironment()
+		if e != nil {
+			t.Logf("Error cleaning up environment: %s\n", e)
+			t.FailNow()
+		}
+	}()
+	e := EnableTelemetry()
+	if e != nil {
+		t.Logf("Error enabling onnxruntime telemetry: %s\n", e)
+		t.Fail()
+	}
+	e = DisableTelemetry()
+	if e != nil {
+		t.Logf("Error disabling onnxruntime telemetry: %s\n", e)
+		t.Fail()
+	}
+	e = EnableTelemetry()
+	if e != nil {
+		t.Logf("Error re-enabling onnxruntime telemetry after disabling: %s\n",
+			e)
+		t.Fail()
+	}
+}
