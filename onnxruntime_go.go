@@ -353,6 +353,15 @@ type Session[T TensorData] struct {
 	outputs []*C.OrtValue
 }
 
+// Similar to Session, but does not require the specification of the input and output
+// shapes at session creation time, and allows for input and output tensors to have
+// different types. This allows for fully dynamic input to the onnx model.
+type DynamicSession[In TensorData, Out TensorData] struct {
+	ortSession  *C.OrtSession
+	inputNames  []*C.char
+	outputNames []*C.char
+}
+
 // The same as NewSession, but takes a slice of bytes containing the .onnx
 // network rather than a file path.
 func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
@@ -412,6 +421,33 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	}, nil
 }
 
+// Similar to NewSessionWithOnnxData, but for dynamic sessions.
+func NewDynamicSessionWithONNXData[in TensorData, out TensorData](onnxData []byte, inputNames, outputNames []string) (*DynamicSession[in, out], error) {
+	var ortSession *C.OrtSession
+	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
+		C.size_t(len(onnxData)), ortEnv, &ortSession)
+	if status != nil {
+		return nil, fmt.Errorf("Error creating session: %w",
+			statusToError(status))
+	}
+	// ONNXRuntime copies the file content unless a specific flag is provided
+	// when creating the session (and we don't provide it!)
+	cInputNames := make([]*C.char, len(inputNames))
+	cOutputNames := make([]*C.char, len(outputNames))
+	for i, v := range inputNames {
+		cInputNames[i] = C.CString(v)
+	}
+	for i, v := range outputNames {
+		cOutputNames[i] = C.CString(v)
+	}
+	return &DynamicSession[in, out]{
+		ortSession:  ortSession,
+		inputNames:  cInputNames,
+		outputNames: cOutputNames,
+	}, nil
+
+}
+
 // Loads the ONNX network at the given path, and initializes a Session
 // instance. If this returns successfully, the caller must call Destroy() on
 // the returned session when it is no longer needed. We require the user to
@@ -429,6 +465,21 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 
 	toReturn, e := NewSessionWithONNXData[T](fileContent, inputNames,
 		outputNames, inputs, outputs)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating session from %s: %w",
+			onnxFilePath, e)
+	}
+	return toReturn, nil
+}
+
+// Same as NewSession, but for dynamic sessions.
+func NewDynamicSession[in TensorData, out TensorData](onnxFilePath string, inputNames, outputNames []string) (*DynamicSession[in, out], error) {
+	fileContent, e := os.ReadFile(onnxFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+	}
+
+	toReturn, e := NewDynamicSessionWithONNXData[in, out](fileContent, inputNames, outputNames)
 	if e != nil {
 		return nil, fmt.Errorf("Error creating session from %s: %w",
 			onnxFilePath, e)
@@ -454,11 +505,51 @@ func (s *Session[_]) Destroy() error {
 	return nil
 }
 
+func (s *DynamicSession[_, _]) Destroy() error {
+	if s.ortSession != nil {
+		C.ReleaseOrtSession(s.ortSession)
+		s.ortSession = nil
+	}
+	for i := range s.inputNames {
+		C.free(unsafe.Pointer(s.inputNames[i]))
+	}
+	s.inputNames = nil
+	for i := range s.outputNames {
+		C.free(unsafe.Pointer(s.outputNames[i]))
+	}
+	s.outputNames = nil
+	return nil
+}
+
 // Runs the session, updating the contents of the output tensors on success.
 func (s *Session[T]) Run() error {
 	status := C.RunOrtSession(s.ortSession, &s.inputs[0], &s.inputNames[0],
 		C.int(len(s.inputs)), &s.outputs[0], &s.outputNames[0],
 		C.int(len(s.outputs)))
+	if status != nil {
+		return fmt.Errorf("Error running network: %w", statusToError(status))
+	}
+	return nil
+}
+
+// Runs the dynamic session. Differently from the Session object, this method
+// requires the caller to provide the slice of input and output tensor pointer
+// of the right type. The resulting output is stored in the output tensors, and
+// it is the responsibility of the caller to destroy the tensors to free memory.
+func (s *DynamicSession[in, out]) Run(inputs []*Tensor[in], outputs []*Tensor[out]) error {
+	// create inputs
+	// destroying the input and output tensors will also destroy the ort values
+	inputOrtTensors := make([]*C.OrtValue, len(inputs))
+	for i, v := range inputs {
+		inputOrtTensors[i] = v.ortValue
+	}
+	outputOrtTensors := make([]*C.OrtValue, len(outputs))
+	for i, v := range outputs {
+		outputOrtTensors[i] = v.ortValue
+	}
+	status := C.RunOrtSession(s.ortSession, &inputOrtTensors[0], &s.inputNames[0],
+		C.int(len(inputs)), &outputOrtTensors[0], &s.outputNames[0],
+		C.int(len(outputs)))
 	if status != nil {
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
