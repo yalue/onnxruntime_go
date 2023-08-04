@@ -266,6 +266,53 @@ func TestExampleNetwork(t *testing.T) {
 	}
 }
 
+func TestExampleNetworkDynamic(t *testing.T) {
+	InitializeRuntime(t)
+	defer func() {
+		e := DestroyEnvironment()
+		if e != nil {
+			t.Logf("Error cleaning up environment: %s\n", e)
+			t.FailNow()
+		}
+	}()
+
+	// Create input and output tensors
+	inputs := parseInputsJSON("test_data/example_network_results.json", t)
+	inputTensor, e := NewTensor(Shape(inputs.InputShape),
+		inputs.FlattenedInput)
+	if e != nil {
+		t.Logf("Failed creating input tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer inputTensor.Destroy()
+	outputTensor, e := NewEmptyTensor[float32](Shape(inputs.OutputShape))
+	if e != nil {
+		t.Logf("Failed creating output tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer outputTensor.Destroy()
+
+	// Set up and run the session without specifying the inputs and outputs shapes
+	session, e := NewDynamicSession[float32, float32]("test_data/example_network.onnx",
+		[]string{"1x4 Input Vector"}, []string{"1x2 Output Vector"})
+	if e != nil {
+		t.Logf("Failed creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	// running with the input
+	e = session.Run([]*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
+	if e != nil {
+		t.Logf("Failed to run the session: %s\n", e)
+		t.FailNow()
+	}
+	e = floatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
+	if e != nil {
+		t.Logf("The neural network didn't produce the correct result: %s\n", e)
+		t.FailNow()
+	}
+}
+
 func TestEnableDisableTelemetry(t *testing.T) {
 	InitializeRuntime(t)
 	defer func() {
