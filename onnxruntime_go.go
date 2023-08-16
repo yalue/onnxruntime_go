@@ -241,6 +241,21 @@ func (s Shape) Equals(other Shape) bool {
 	return true
 }
 
+// This wraps internal implementation details to avoid exposing them to users
+// via the ArbitraryTensor interface.
+type TensorInternalData struct {
+	ortValue *C.OrtValue
+}
+
+// An interface for managing tensors where we don't care about accessing the
+// underlying data slice. All typed tensors will support this interface,
+// regardless of the underlying data type.
+type ArbitraryTensor interface {
+	DataType() C.ONNXTensorElementDataType
+	GetShape() Shape
+	GetInternals() *TensorInternalData
+}
+
 type Tensor[T TensorData] struct {
 	// The shape of the tensor
 	shape Shape
@@ -265,12 +280,24 @@ func (t *Tensor[T]) GetData() []T {
 	return t.data
 }
 
+// Returns the value from the ONNXTensorElementDataType C enum corresponding to
+// the type of data held by this tensor.
+func (t *Tensor[T]) DataType() C.ONNXTensorElementDataType {
+	return GetTensorElementDataType[T]()
+}
+
 // Returns the shape of the tensor. The returned shape is only a copy;
 // modifying this does *not* change the shape of the underlying tensor.
 // (Modifying the tensor's shape can only be accomplished by Destroying and
 // recreating the tensor with the same data.)
 func (t *Tensor[_]) GetShape() Shape {
 	return t.shape.Clone()
+}
+
+func (t *Tensor[_]) GetInternals() *TensorInternalData {
+	return &TensorInternalData{
+		ortValue: t.ortValue,
+	}
 }
 
 // Makes a deep copy of the tensor, including its ONNXRuntime value. The Tensor

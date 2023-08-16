@@ -339,3 +339,39 @@ func TestEnableDisableTelemetry(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestArbitraryTensors(t *testing.T) {
+	InitializeRuntime(t)
+	defer func() {
+		e := DestroyEnvironment()
+		if e != nil {
+			t.Logf("Error cleaning up environment: %s\n", e)
+			t.FailNow()
+		}
+	}()
+	tensorShape := NewShape(2, 2)
+	tensorA, e := NewTensor(tensorShape, []uint8{1, 2, 3, 4})
+	if e != nil {
+		t.Logf("Error creating uint8 tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer tensorA.Destroy()
+	tensorB, e := NewTensor(tensorShape, []float64{5, 6, 7, 8})
+	if e != nil {
+		t.Logf("Error creating float64 tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer tensorB.Destroy()
+	tensorC, e := NewTensor(tensorShape, []int16{9, 10, 11, 12})
+	if e != nil {
+		t.Logf("Error creating int16 tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer tensorC.Destroy()
+	tensorList := []ArbitraryTensor{tensorA, tensorB, tensorC}
+	for i, v := range tensorList {
+		ortValue := v.GetInternals().ortValue
+		t.Logf("ArbitraryTensor %d: Data type %d, shape %s, OrtValue %p\n",
+			i, v.DataType(), v.GetShape(), ortValue)
+	}
+}
