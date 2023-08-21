@@ -11,7 +11,6 @@ import (
 )
 
 // #cgo CFLAGS: -O2 -g
-// #cgo LDFLAGS: -L./lib/osx -Wl,-rpath,../../lib/osx -lonnxruntime -framework CoreML
 // #include "onnxruntime_wrapper.h"
 // #include "coreml_wrapper.h"
 // #include "coreml_provider_factory.h" // Include the CoreML header
