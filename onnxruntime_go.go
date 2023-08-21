@@ -11,8 +11,10 @@ import (
 )
 
 // #cgo CFLAGS: -O2 -g
-//
+// #cgo LDFLAGS: -L./lib/osx -Wl,-rpath,../../lib/osx -lonnxruntime -framework CoreML
 // #include "onnxruntime_wrapper.h"
+// #include "coreml_wrapper.h"
+// #include "coreml_provider_factory.h" // Include the CoreML header
 import "C"
 
 // This string should be the path to onnxruntime.so, or onnxruntime.dll.
@@ -554,4 +556,50 @@ func (s *DynamicSession[in, out]) Run(inputs []*Tensor[in], outputs []*Tensor[ou
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
 	return nil
+}
+
+// Function to register CoreML EP
+func RegisterCoreMLExecutionProvider(sessionOptions *C.OrtSessionOptions, coremlFlags uint32) error {
+	result := C.RegisterCoreMLExecutionProvider(sessionOptions, C.uint32_t(coremlFlags))
+	if result != 0 {
+		return fmt.Errorf("Failed to register CoreML Execution Provider, error code: %d", result)
+	}
+	return nil
+}
+func CreateSessionWithCoreML[T TensorData](modelPath string, coremlFlags uint32, inputNames, outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+	if len(inputs) == 0 || len(outputs) == 0 || len(inputs) != len(inputNames) || len(outputs) != len(outputNames) {
+		return nil, fmt.Errorf("Invalid input and output configuration")
+	}
+
+	var cSession *C.OrtSession
+	result := C.CreateSessionWithCoreML(C.CString(modelPath), C.uint32_t(coremlFlags), &cSession)
+	if result != 0 {
+		return nil, fmt.Errorf("Failed to create session with CoreML, error code: %d", result)
+	}
+
+	cInputNames := make([]*C.char, len(inputNames))
+	cOutputNames := make([]*C.char, len(outputNames))
+	for i, v := range inputNames {
+		cInputNames[i] = C.CString(v)
+	}
+	for i, v := range outputNames {
+		cOutputNames[i] = C.CString(v)
+	}
+
+	cInputs := make([]*C.OrtValue, len(inputs))
+	cOutputs := make([]*C.OrtValue, len(outputs))
+	for i, v := range inputs {
+		cInputs[i] = v.ortValue
+	}
+	for i, v := range outputs {
+		cOutputs[i] = v.ortValue
+	}
+
+	return &Session[T]{
+		ortSession:  cSession,
+		inputNames:  cInputNames,
+		outputNames: cOutputNames,
+		inputs:      cInputs,
+		outputs:     cOutputs,
+	}, nil
 }
