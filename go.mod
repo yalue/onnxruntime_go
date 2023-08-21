@@ -1,4 +1,4 @@
-module github.com/yalue/onnxruntime_go
+module github.com/8ff/onnxruntime_go
 
 go 1.19
 
