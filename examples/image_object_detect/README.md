@@ -1,7 +1,7 @@
 ## Basic image object detection with CoreML or CPU
 ```bash
 cd examples/image_object_detect
-./setEnv.sh && go run main.go
+source setEnv.sh && go run main.go
 
 Run 1 :
 TOOK: 33ms
