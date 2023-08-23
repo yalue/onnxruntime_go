@@ -36,6 +36,8 @@ few lines of the following example.
 Example Usage
 -------------
 
+The full documentation can be found at [pkg.go.dev](https://pkg.go.dev/github.com/yalue/onnxruntime_go).
+
 The following example illustrates how this library can be used to load and run
 an ONNX network taking a single input tensor and producing a single output
 tensor, both of which contain 32-bit floating point values.  Note that error
@@ -68,9 +70,9 @@ func main() {
     outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
     defer outputTensor.Destroy()
 
-    session, err := ort.NewSession[float32]("path/to/network.onnx",
+    session, err := ort.NewAdvancedSession("path/to/network.onnx",
         []string{"Input 1 Name"}, []string{"Output 1 Name"},
-        []*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
+        []ArbitraryTensor{inputTensor}, []ArbitraryTensor{outputTensor}, nil)
     defer session.Destroy()
 
     // Calling Run() will run the network, reading the current contents of the
@@ -85,5 +87,16 @@ func main() {
 }
 ```
 
-The full documentation can be found at [pkg.go.dev](https://pkg.go.dev/github.com/yalue/onnxruntime_go).
+
+Deprecated APIs
+---------------
+
+Older versions of this library used a typed `Session[T]` struct to keep track
+of sessions. In retrospect, associating type parameters with Sessions was
+unnecessary, and the `AdvancedSession` type, along with its associated APIs,
+was added to rectify this mistake.  For backwards compatibility, the old typed
+`Session[T]` and `DynamicSession[T]` types are still included and unlikely to
+be removed.  However, they now delegate their functionality to
+`AdvancedSession` internally.  New code should always favor using
+`AdvancedSession` directly.
 

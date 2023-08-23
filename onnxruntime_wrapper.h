@@ -7,7 +7,7 @@
 
 // First, include these common headers, as they get transitively included by
 // onnxruntime_c_api.h. We need to include them ourselves, first, so that the
-// preprocessor will skip then while _WIN32 is undefined.
+// preprocessor will skip them while _WIN32 is undefined.
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -50,9 +50,32 @@ void ReleaseOrtMemoryInfo(OrtMemoryInfo *info);
 // Returns the message associated with the given ORT status.
 const char *GetErrorMessage(OrtStatus *status);
 
-// Creates an ORT session using the given model.
+// Wraps ort_api->CreateSessionOptions
+OrtStatus *CreateSessionOptions(OrtSessionOptions **o);
+
+// Wraps ort_api->ReleaseSessionOptions
+void ReleaseSessionOptions(OrtSessionOptions *o);
+
+// Wraps ort_api->SetIntraOpNumThreads
+OrtStatus *SetIntraOpNumThreads(OrtSessionOptions *o, int n);
+
+// Wraps ort_api->SetInterOpNumThreads
+OrtStatus *SetInterOpNumThreads(OrtSessionOptions *o, int n);
+
+// Wraps ort_api->CreateCUDAProviderOptions
+OrtStatus *CreateCUDAProviderOptions(OrtCUDAProviderOptionsV2 **o);
+
+// Wraps ort_api->ReleaseCUDAProviderOptions
+void ReleaseCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o);
+
+// Wraps ort_api->UpdateCUDAProviderOptions
+OrtStatus *UpdateCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o,
+  const char **keys, const char **values, int num_keys);
+
+// Creates an ORT session using the given model. The given options pointer may
+// be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
-  OrtEnv *env, OrtSession **out);
+  OrtEnv *env, OrtSession **out, OrtSessionOptions *options);
 
 // Runs an ORT session with the given input and output tensors, along with
 // their names. In our use case, outputs must NOT be NULL.

@@ -3,6 +3,7 @@ package onnxruntime_go
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"runtime"
 	"testing"
@@ -374,4 +375,103 @@ func TestArbitraryTensors(t *testing.T) {
 		t.Logf("ArbitraryTensor %d: Data type %d, shape %s, OrtValue %p\n",
 			i, v.DataType(), v.GetShape(), ortValue)
 	}
+}
+
+// Used for testing the operation of test_data/example_multitype.onnx
+func randomMultitypeInputs(t *testing.T, seed int64) (*Tensor[uint8],
+	*Tensor[float64]) {
+	rng := rand.New(rand.NewSource(seed))
+	inputA, e := NewEmptyTensor[uint8](NewShape(1, 1, 1))
+	if e != nil {
+		t.Logf("Failed creating input A: %s\n", e)
+		t.FailNow()
+	}
+	inputB, e := NewEmptyTensor[float64](NewShape(1, 2, 2))
+	if e != nil {
+		inputA.Destroy()
+		t.Logf("Failed creating input B: %s\n", e)
+		t.FailNow()
+	}
+	inputA.GetData()[0] = uint8(rng.Intn(256))
+	for i := 0; i < 4; i++ {
+		inputB.GetData()[i] = rng.Float64()
+	}
+	return inputA, inputB
+}
+
+// Used when checking the output produced by test_data/example_multitype.onnx
+func getExpectedMultitypeOutputs(inputA *Tensor[uint8],
+	inputB *Tensor[float64]) ([]int16, []int64) {
+	outputA := make([]int16, 4)
+	dataA := inputA.GetData()[0]
+	dataB := inputB.GetData()
+	for i := 0; i < len(outputA); i++ {
+		outputA[i] = int16((dataB[i] * float64(dataA)) - 512)
+	}
+	return outputA, []int64{int64(dataA) * 1234}
+}
+
+// Verifies that the given tensor's data matches the expected content. Prints
+// an error and fails the test if anything doesn't match.
+func verifyTensorData[T TensorData](t *testing.T, tensor *Tensor[T],
+	expectedContent []T) {
+	data := tensor.GetData()
+	if len(data) != len(expectedContent) {
+		t.Logf("Expected tensor to contain %d elements, but it contains %d.\n",
+			len(expectedContent), len(data))
+		t.FailNow()
+	}
+	for i, v := range expectedContent {
+		if v != data[i] {
+			t.Logf("Data mismatch at element index %d: expected %v, got %v\n",
+				i, v, data[i])
+			t.FailNow()
+		}
+	}
+}
+
+// Tests a session taking multiple input tensors of different types and
+// producing multiple output tensors of different types.
+func TestDifferentInputOutputTypes(t *testing.T) {
+	InitializeRuntime(t)
+	defer func() {
+		e := DestroyEnvironment()
+		if e != nil {
+			t.Logf("Error cleaning up environment: %s\n", e)
+			t.FailNow()
+		}
+	}()
+	inputA, inputB := randomMultitypeInputs(t, 9999)
+	defer inputA.Destroy()
+	defer inputB.Destroy()
+	outputA, e := NewEmptyTensor[int16](NewShape(1, 2, 2))
+	if e != nil {
+		t.Logf("Failed creating output A: %s\n", e)
+		t.FailNow()
+	}
+	defer outputA.Destroy()
+	outputB, e := NewEmptyTensor[int64](NewShape(1, 1, 1))
+	if e != nil {
+		t.Logf("Failed creating output B: %s\n", e)
+		t.FailNow()
+	}
+	defer outputB.Destroy()
+
+	session, e := NewAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"},
+		[]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{outputA, outputB}, nil)
+	if e != nil {
+		t.Logf("Failed creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running session: %s\n", e)
+		t.FailNow()
+	}
+	expectedA, expectedB := getExpectedMultitypeOutputs(inputA, inputB)
+	verifyTensorData(t, outputA, expectedA)
+	verifyTensorData(t, outputB, expectedB)
 }
