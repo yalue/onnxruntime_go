@@ -39,6 +39,15 @@ func InitializeRuntime(t *testing.T) {
 	}
 }
 
+// Should be called at the end of each test to de-initialize the runtime.
+func CleanupRuntime(t *testing.T) {
+	e := DestroyEnvironment()
+	if e != nil {
+		t.Logf("Error cleaning up environment: %s\n", e)
+		t.FailNow()
+	}
+}
+
 // Used to obtain the shape
 func parseInputsJSON(path string, t *testing.T) *testInputsInfo {
 	toReturn := testInputsInfo{}
@@ -74,6 +83,17 @@ func floatsEqual(a, b []float32) error {
 		}
 	}
 	return nil
+}
+
+// Returns an empty tensor with the given type and shape, or fails the test on
+// error.
+func newTestTensor[T TensorData](t *testing.T, s Shape) *Tensor[T] {
+	toReturn, e := NewEmptyTensor[T](s)
+	if e != nil {
+		t.Logf("Failed creating empty tensor with shape %s: %s\n", s, e)
+		t.FailNow()
+	}
+	return toReturn
 }
 
 func TestTensorTypes(t *testing.T) {
@@ -222,13 +242,7 @@ func TestCloneTensor(t *testing.T) {
 
 func TestExampleNetwork(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
 
 	// Create input and output tensors
 	inputs := parseInputsJSON("test_data/example_network_results.json", t)
@@ -239,11 +253,7 @@ func TestExampleNetwork(t *testing.T) {
 		t.FailNow()
 	}
 	defer inputTensor.Destroy()
-	outputTensor, e := NewEmptyTensor[float32](Shape(inputs.OutputShape))
-	if e != nil {
-		t.Logf("Failed creating output tensor: %s\n", e)
-		t.FailNow()
-	}
+	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
 	defer outputTensor.Destroy()
 
 	// Set up and run the session.
@@ -269,13 +279,7 @@ func TestExampleNetwork(t *testing.T) {
 
 func TestExampleNetworkDynamic(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
 
 	// Create input and output tensors
 	inputs := parseInputsJSON("test_data/example_network_results.json", t)
@@ -286,11 +290,7 @@ func TestExampleNetworkDynamic(t *testing.T) {
 		t.FailNow()
 	}
 	defer inputTensor.Destroy()
-	outputTensor, e := NewEmptyTensor[float32](Shape(inputs.OutputShape))
-	if e != nil {
-		t.Logf("Failed creating output tensor: %s\n", e)
-		t.FailNow()
-	}
+	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
 	defer outputTensor.Destroy()
 
 	// Set up and run the session without specifying the inputs and outputs shapes
@@ -316,13 +316,8 @@ func TestExampleNetworkDynamic(t *testing.T) {
 
 func TestEnableDisableTelemetry(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
+
 	e := EnableTelemetry()
 	if e != nil {
 		t.Logf("Error enabling onnxruntime telemetry: %s\n", e)
@@ -343,13 +338,8 @@ func TestEnableDisableTelemetry(t *testing.T) {
 
 func TestArbitraryTensors(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
+
 	tensorShape := NewShape(2, 2)
 	tensorA, e := NewTensor(tensorShape, []uint8{1, 2, 3, 4})
 	if e != nil {
@@ -381,11 +371,9 @@ func TestArbitraryTensors(t *testing.T) {
 func randomMultitypeInputs(t *testing.T, seed int64) (*Tensor[uint8],
 	*Tensor[float64]) {
 	rng := rand.New(rand.NewSource(seed))
-	inputA, e := NewEmptyTensor[uint8](NewShape(1, 1, 1))
-	if e != nil {
-		t.Logf("Failed creating input A: %s\n", e)
-		t.FailNow()
-	}
+	inputA := newTestTensor[uint8](t, NewShape(1, 1, 1))
+	// We won't use newTestTensor here, otherwise we won't have a chance to
+	// destroy inputA on failure.
 	inputB, e := NewEmptyTensor[float64](NewShape(1, 2, 2))
 	if e != nil {
 		inputA.Destroy()
@@ -434,27 +422,14 @@ func verifyTensorData[T TensorData](t *testing.T, tensor *Tensor[T],
 // producing multiple output tensors of different types.
 func TestDifferentInputOutputTypes(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
+
 	inputA, inputB := randomMultitypeInputs(t, 9999)
 	defer inputA.Destroy()
 	defer inputB.Destroy()
-	outputA, e := NewEmptyTensor[int16](NewShape(1, 2, 2))
-	if e != nil {
-		t.Logf("Failed creating output A: %s\n", e)
-		t.FailNow()
-	}
+	outputA := newTestTensor[int16](t, NewShape(1, 2, 2))
 	defer outputA.Destroy()
-	outputB, e := NewEmptyTensor[int64](NewShape(1, 1, 1))
-	if e != nil {
-		t.Logf("Failed creating output B: %s\n", e)
-		t.FailNow()
-	}
+	outputB := newTestTensor[int64](t, NewShape(1, 1, 1))
 	defer outputB.Destroy()
 
 	session, e := NewAdvancedSession("test_data/example_multitype.onnx",
@@ -474,4 +449,144 @@ func TestDifferentInputOutputTypes(t *testing.T) {
 	expectedA, expectedB := getExpectedMultitypeOutputs(inputA, inputB)
 	verifyTensorData(t, outputA, expectedA)
 	verifyTensorData(t, outputB, expectedB)
+}
+
+func TestDynamicDifferentInputOutputTypes(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	session, e := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"}, nil)
+	defer session.Destroy()
+
+	numTests := 100
+	aInputs := make([]*Tensor[uint8], numTests)
+	bInputs := make([]*Tensor[float64], numTests)
+	aOutputs := make([]*Tensor[int16], numTests)
+	bOutputs := make([]*Tensor[int64], numTests)
+
+	// Make sure we clean up all the tensors created for this test, even if we
+	// somehow fail before we've created them all.
+	defer func() {
+		for i := 0; i < numTests; i++ {
+			if aInputs[i] != nil {
+				aInputs[i].Destroy()
+			}
+			if bInputs[i] != nil {
+				bInputs[i].Destroy()
+			}
+			if aOutputs[i] != nil {
+				aOutputs[i].Destroy()
+			}
+			if bOutputs[i] != nil {
+				bOutputs[i].Destroy()
+			}
+		}
+	}()
+
+	// Actually create the inputs and run the tests.
+	for i := 0; i < numTests; i++ {
+		aInputs[i], bInputs[i] = randomMultitypeInputs(t, 999+int64(i))
+		aOutputs[i] = newTestTensor[int16](t, NewShape(1, 2, 2))
+		bOutputs[i] = newTestTensor[int64](t, NewShape(1, 1, 1))
+		e = session.Run([]ArbitraryTensor{aInputs[i], bInputs[i]},
+			[]ArbitraryTensor{aOutputs[i], bOutputs[i]})
+		if e != nil {
+			t.Logf("Failed running session for test %d: %s\n", i, e)
+			t.FailNow()
+		}
+	}
+
+	// Now that all the tests ran, check the outputs. If the
+	// DynamicAdvancedSession worked properly, each run should have only
+	// modified its given outputs.
+	for i := 0; i < numTests; i++ {
+		expectedA, expectedB := getExpectedMultitypeOutputs(aInputs[i],
+			bInputs[i])
+		verifyTensorData(t, aOutputs[i], expectedA)
+		verifyTensorData(t, bOutputs[i], expectedB)
+	}
+}
+
+func TestWrongInputs(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	session, e := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"}, nil)
+	defer session.Destroy()
+
+	inputA, inputB := randomMultitypeInputs(t, 123456)
+	defer inputA.Destroy()
+	defer inputB.Destroy()
+	outputA := newTestTensor[int16](t, NewShape(1, 2, 2))
+	defer outputA.Destroy()
+	outputB := newTestTensor[int64](t, NewShape(1, 1, 1))
+	defer outputB.Destroy()
+
+	// Make sure that passing a tensor with the wrong type but correct shape
+	// will correctly cause an error rather than a crash, whether used as an
+	// input or output.
+	wrongTypeTensor := newTestTensor[float32](t, NewShape(1, 2, 2))
+	defer wrongTypeTensor.Destroy()
+	e = session.Run([]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{wrongTypeTensor, outputB})
+	if e == nil {
+		t.Logf("Didn't get expected error when passing a float32 tensor in " +
+			"place of an int16 output tensor.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when passing a float32 tensor in place of an "+
+		"int16 output tensor: %s\n", e)
+	e = session.Run([]ArbitraryTensor{inputA, wrongTypeTensor},
+		[]ArbitraryTensor{outputA, outputB})
+	if e == nil {
+		t.Logf("Didn't get expected error when passing a float32 tensor in " +
+			"place of a float64 input tensor.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when passing a float32 tensor in place of a "+
+		"float64 input tensor: %s\n", e)
+
+	// Make sure that passing a tensor with the wrong shape but correct type
+	// will cause an error rather than a crash, when using as an input or an
+	// output.
+	wrongShapeInput := newTestTensor[uint8](t, NewShape(22))
+	defer wrongShapeInput.Destroy()
+	e = session.Run([]ArbitraryTensor{wrongShapeInput, inputB},
+		[]ArbitraryTensor{outputA, outputB})
+	if e == nil {
+		t.Logf("Didn't get expected error when running with an incorrectly " +
+			"shaped input.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when running with an incorrectly shaped "+
+		"input: %s\n", e)
+	wrongShapeOutput := newTestTensor[int64](t, NewShape(1, 1, 1, 1, 1, 1))
+	defer wrongShapeOutput.Destroy()
+	e = session.Run([]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{outputA, wrongShapeOutput})
+	if e == nil {
+		t.Logf("Didn't get expected error when running with an incorrectly " +
+			"shaped output.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when running with an incorrectly shaped "+
+		"output: %s\n", e)
+
+	e = session.Run([]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{outputA, outputB})
+	if e != nil {
+		t.Logf("Got error attempting to (correctly) Run a session after "+
+			"attempting to use incorrect inputs or outputs: %s\n", e)
+		t.FailNow()
+	}
+}
+
+func TestSessionOptions(t *testing.T) {
+	// TODO: Write TestSessionOptions
+}
+
+func TestCUDASession(t *testing.T) {
+	// TODO: Write TestCUDASession
 }
