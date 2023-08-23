@@ -502,6 +502,20 @@ func (o *SessionOptions) SetInterOpNumThreads(n int) error {
 	return nil
 }
 
+// Takes a pointer to an initialized CUDAProviderOptions instance, and applies
+// them to the session options. This is what you'll need to call if you want
+// the session to use CUDA. Returns an error if your device (or onnxruntime
+// library) does not support CUDA. The CUDAProviderOptions struct can be
+// destroyed after this.
+func (o *SessionOptions) AppendExecutionProviderCUDA(
+	cudaOptions *CUDAProviderOptions) error {
+	status := C.AppendExecutionProviderCUDAV2(o.o, cudaOptions.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.

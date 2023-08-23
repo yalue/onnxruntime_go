@@ -23,6 +23,38 @@ systems.
 Additionally, this library uses Go's recent addition of generics to support
 multiple Tensor data types; see the `NewTensor` or `NewEmptyTensor` functions.
 
+
+Note on onnxruntime Library Versions
+------------------------------------
+
+At the time of writing, this library uses version 1.15.1 of the onnxruntime
+C API headers.  So, it will probably only work with version 1.15.1 of the
+onnxruntime shared libraries, as well.  If you need to use a different version,
+or if I get behind on updating this repository, updating or changing the
+onnxruntime version should be fairly easy:
+
+ 1. Replace the `onnxrunteme_c_api.h` file with the version corresponding to
+    the onnxruntime version you wish to use.
+
+ 2. Replace the `test_data/onnxruntime.dll` (or `test_data/onnxruntime*.so`)
+    file with the version corresponding to the onnxruntime version you wish to
+    use.
+
+Note that both the C API header and the shared library files are available to
+download from the releases page in the
+[official repo](https://github.com/microsoft/onnxruntime). Download the archive
+for the release you want to use, and extract it. The header file is located in
+the "include" subdirectory, and the shared library will be located in the "lib"
+subdirectory. (On Linux systems, you'll need the version of the .so with the
+appended version numbers, e.g., `libonnxruntime.so.1.15.1`, and _not_ the
+`libonnxruntime.so`, which is just a symbolic link.)  The archive will contain
+several other files containing C++ headers, debug symbols, and so on, but you
+shouldn't need anything other than the single onnxruntime shared library and
+`onnxruntime_c_api.h`.  (The exception is if you're wanting to enable GPU
+support, where you may need other shared-library files, such as
+`execution_providers_cuda.dll` and `execution_providers_shared.dll` on Windows.)
+
+
 Requirements
 ------------
 

@@ -59,6 +59,12 @@ OrtStatus *SetInterOpNumThreads(OrtSessionOptions *o, int n) {
   return ort_api->SetInterOpNumThreads(o, n);
 }
 
+OrtStatus *AppendExecutionProviderCUDAV2(OrtSessionOptions *o,
+  OrtCUDAProviderOptionsV2 *cuda_options) {
+  return ort_api->SessionOptionsAppendExecutionProvider_CUDA_V2(o,
+    cuda_options);
+}
+
 OrtStatus *CreateCUDAProviderOptions(OrtCUDAProviderOptionsV2 **o) {
   return ort_api->CreateCUDAProviderOptions(o);
 }

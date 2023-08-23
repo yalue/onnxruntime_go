@@ -657,7 +657,7 @@ func runNumThreadsBenchmark(b *testing.B, nThreads int) {
 	defer CleanupRuntime(b)
 
 	// We'll use the same seed when running benchmarks, to compare the
-	input, output := prepareBenchmarkTensors(b, 12345678999)
+	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
 	defer input.Destroy()
 	defer output.Destroy()
 
@@ -706,5 +706,56 @@ func BenchmarkOpMultiThreaded(b *testing.B) {
 }
 
 func TestCUDASession(t *testing.T) {
-	// TODO: Write TestCUDASession
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	// First, create the CUDA options
+	cudaOptions, e := NewCUDAProviderOptions()
+	if e != nil {
+		// This is where things seem to fail if the onnxruntime library version
+		// doesn't support CUDA.
+		t.Logf("Error creating CUDA provider options: %s\n", e)
+		t.Logf("Your version of the onnxruntime library may not support CUDA.\n")
+		t.Logf("Skipping the remainder of this test.\n")
+		return
+	}
+	defer cudaOptions.Destroy()
+	e = cudaOptions.Update(map[string]string{"device_id": "0"})
+	if e != nil {
+		// This is where things seem to fail if the system doesn't support CUDA
+		t.Logf("Error updating CUDA options to use device ID 0: %s\n", e)
+		t.Logf("Your system may not support CUDA.\n")
+		t.Logf("Skipping the remainder of this test.\n")
+		return
+	}
+	// Next, provide the CUDA options to the sesison options
+	sessionOptions, e := NewSessionOptions()
+	if e != nil {
+		t.Logf("Error creating SessionOptions: %s\n", e)
+		t.FailNow()
+	}
+	defer sessionOptions.Destroy()
+	e = sessionOptions.AppendExecutionProviderCUDA(cudaOptions)
+	if e != nil {
+		t.Logf("Error setting CUDA execution provider options: %s\n", e)
+		t.FailNow()
+	}
+
+	input, output := prepareBenchmarkTensors(t, 1337)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, sessionOptions)
+	if e != nil {
+		t.Logf("Error creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running session with CUDA: %s\n", e)
+		t.FailNow()
+	}
+	t.Logf("Ran session with CUDA OK.\n")
 }
