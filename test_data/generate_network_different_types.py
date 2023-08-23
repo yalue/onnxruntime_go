@@ -8,8 +8,6 @@
 #  - "OutputA": A 2x2 16-bit signed int tensor, equal to (InputB * InputA) - 512
 #  - "OutputB": A 1x1 64-bit int tensor, equal to InputA multiplied by 1234
 import torch
-from torch.nn.functional import relu
-import json
 
 class DifferentTypesModel(torch.nn.Module):
     def __init__(self):

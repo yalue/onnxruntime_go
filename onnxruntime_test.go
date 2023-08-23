@@ -9,6 +9,10 @@ import (
 	"testing"
 )
 
+// Always use the same RNG seed for benchmarks, so we can compare the
+// performance on the same random input data.
+const benchmarkRNGSeed = 12345678
+
 // This type is read from JSON and used to determine the inputs and expected
 // outputs for an ONNX network.
 type testInputsInfo struct {
@@ -19,7 +23,7 @@ type testInputsInfo struct {
 }
 
 // This must be called prior to running each test.
-func InitializeRuntime(t *testing.T) {
+func InitializeRuntime(t testing.TB) {
 	if IsInitialized() {
 		return
 	}
@@ -40,7 +44,7 @@ func InitializeRuntime(t *testing.T) {
 }
 
 // Should be called at the end of each test to de-initialize the runtime.
-func CleanupRuntime(t *testing.T) {
+func CleanupRuntime(t testing.TB) {
 	e := DestroyEnvironment()
 	if e != nil {
 		t.Logf("Error cleaning up environment: %s\n", e)
@@ -49,7 +53,7 @@ func CleanupRuntime(t *testing.T) {
 }
 
 // Used to obtain the shape
-func parseInputsJSON(path string, t *testing.T) *testInputsInfo {
+func parseInputsJSON(path string, t testing.TB) *testInputsInfo {
 	toReturn := testInputsInfo{}
 	f, e := os.Open(path)
 	if e != nil {
@@ -87,7 +91,7 @@ func floatsEqual(a, b []float32) error {
 
 // Returns an empty tensor with the given type and shape, or fails the test on
 // error.
-func newTestTensor[T TensorData](t *testing.T, s Shape) *Tensor[T] {
+func newTestTensor[T TensorData](t testing.TB, s Shape) *Tensor[T] {
 	toReturn, e := NewEmptyTensor[T](s)
 	if e != nil {
 		t.Logf("Failed creating empty tensor with shape %s: %s\n", s, e)
@@ -583,8 +587,122 @@ func TestWrongInputs(t *testing.T) {
 	}
 }
 
+// See the comment in generate_network_big_compute.py for information about
+// the inputs and outputs used for testing or benchmarking session options.
+func prepareBenchmarkTensors(t testing.TB, seed int64) (*Tensor[float32],
+	*Tensor[float32]) {
+	vectorLength := int64(1024 * 1024 * 50)
+	inputData := make([]float32, vectorLength)
+	rng := rand.New(rand.NewSource(seed))
+	for i := range inputData {
+		inputData[i] = rng.Float32()
+	}
+	input, e := NewTensor(NewShape(1, vectorLength), inputData)
+	if e != nil {
+		t.Logf("Error creating input tensor: %s\n", e)
+		t.FailNow()
+	}
+	output, e := NewEmptyTensor[float32](NewShape(1, vectorLength))
+	if e != nil {
+		input.Destroy()
+		t.Logf("Error creating output tensor: %s\n", e)
+		t.FailNow()
+	}
+	return input, output
+}
+
 func TestSessionOptions(t *testing.T) {
-	// TODO: Write TestSessionOptions
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	input, output := prepareBenchmarkTensors(t, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Logf("Error creating session options: %s\n", e)
+		t.FailNow()
+	}
+	defer options.Destroy()
+	e = options.SetIntraOpNumThreads(3)
+	if e != nil {
+		t.Logf("Error setting intra-op num threads: %s\n", e)
+		t.FailNow()
+	}
+	e = options.SetInterOpNumThreads(1)
+	if e != nil {
+		t.Logf("Error setting inter-op num threads: %s\n", e)
+		t.FailNow()
+	}
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, options)
+	if e != nil {
+		t.Logf("Error creating session with options: %s\n", e)
+		t.FailNow()
+	}
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running session: %s\n", e)
+		t.FailNow()
+	}
+}
+
+// Very similar to TestSessionOptions, but structured as a benchmark.
+func runNumThreadsBenchmark(b *testing.B, nThreads int) {
+	// Don't run the benchmark timer when doing initialization.
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+
+	// We'll use the same seed when running benchmarks, to compare the
+	input, output := prepareBenchmarkTensors(b, 12345678999)
+	defer input.Destroy()
+	defer output.Destroy()
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		b.Logf("Error creating options: %s\n", e)
+		b.FailNow()
+	}
+	defer options.Destroy()
+	e = options.SetIntraOpNumThreads(nThreads)
+	if e != nil {
+		b.Logf("Error setting intra-op threads to %d: %s\n", nThreads, e)
+		b.FailNow()
+	}
+	e = options.SetInterOpNumThreads(nThreads)
+	if e != nil {
+		b.Logf("Error setting inter-op threads to %d: %s\n", nThreads, e)
+		b.FailNow()
+	}
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, options)
+	if e != nil {
+		b.Logf("Error creating session: %s\n", e)
+		b.FailNow()
+	}
+	defer session.Destroy()
+
+	// Initialization is done; we can run the timer now.
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Logf("Failed running test %d/%d: %s\n", n+1, b.N, e)
+			b.FailNow()
+		}
+	}
+}
+
+func BenchmarkOpSingleThreaded(b *testing.B) {
+	runNumThreadsBenchmark(b, 1)
+}
+
+func BenchmarkOpMultiThreaded(b *testing.B) {
+	runNumThreadsBenchmark(b, 0)
 }
 
 func TestCUDASession(t *testing.T) {
