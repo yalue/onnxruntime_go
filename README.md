@@ -64,6 +64,13 @@ own library for some other reason), you simply need to provide the correct path
 to the shared library when initializing the wrapper.  This is seen in the first
 few lines of the following example.
 
+Note that if you want to use CUDA, you'll need to be using a version of the
+onnxruntime shared library with CUDA support, as well as be using a CUDA
+version supported by the underlying version of your onnxruntime library. For
+example, version 1.15.1 of the onnxruntime library only supports CUDA 11.8. See
+[the onnxruntime CUDA support documentation](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)
+for more specifics.
+
 
 Example Usage
 -------------
