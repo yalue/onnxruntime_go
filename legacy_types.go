@@ -9,6 +9,9 @@ import (
 	"os"
 )
 
+// #include "onnxruntime_wrapper.h"
+import "C"
+
 // This type of session is for ONNX networks with the same input and output
 // data types.
 //
@@ -131,24 +134,30 @@ func (s *Session[T]) Run() error {
 // responsibility to create and Destroy all tensors passed to this function.
 func (s *DynamicSession[in, out]) Run(inputs []*Tensor[in],
 	outputs []*Tensor[out]) error {
-	if len(inputs) != len(s.s.s.inputs) {
+	if len(inputs) != len(s.s.s.inputNames) {
 		return fmt.Errorf("The session specified %d input names, but Run() "+
-			"was called with %d input tensors", len(s.s.s.inputs), len(inputs))
+			"was called with %d input tensors", len(s.s.s.inputNames),
+			len(inputs))
 	}
-	if len(outputs) != len(s.s.s.outputs) {
+	if len(outputs) != len(s.s.s.outputNames) {
 		return fmt.Errorf("The session specified %d output names, but Run() "+
-			"was called with %d output tensors", len(s.s.s.outputs),
+			"was called with %d output tensors", len(s.s.s.outputNames),
 			len(outputs))
 	}
-
-	// Rather than having to convert the Tensor pointers to ArbitraryTensor
-	// types and calling GetInternals(), we'll just access the underlying
-	// non-Dynamic AdvancedSession and set the inputs and outputs directly.
+	inputValues := make([]*C.OrtValue, len(inputs))
 	for i, v := range inputs {
-		s.s.s.inputs[i] = v.ortValue
+		inputValues[i] = v.GetInternals().ortValue
 	}
+	outputValues := make([]*C.OrtValue, len(outputs))
 	for i, v := range outputs {
-		s.s.s.outputs[i] = v.ortValue
+		outputValues[i] = v.GetInternals().ortValue
 	}
-	return s.s.s.Run()
+
+	status := C.RunOrtSession(s.s.s.ortSession, &inputValues[0],
+		&s.s.s.inputNames[0], C.int(len(inputs)), &outputValues[0],
+		&s.s.s.outputNames[0], C.int(len(outputs)))
+	if status != nil {
+		return fmt.Errorf("Error running network: %w", statusToError(status))
+	}
+	return nil
 }

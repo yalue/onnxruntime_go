@@ -545,7 +545,7 @@ type AdvancedSession struct {
 	inputNames  []*C.char
 	outputNames []*C.char
 	// We only need the OrtValue pointers from the tensors when working with
-	// the C API.
+	// the C API. Also, these fields aren't used with a DynamicAdvancedSession.
 	inputs  []*C.OrtValue
 	outputs []*C.OrtValue
 }
@@ -708,14 +708,13 @@ func NewDynamicAdvancedSessionWithONNXData(onnxData []byte,
 	for i, v := range outputNames {
 		cOutputNames[i] = C.CString(v)
 	}
-	// We pre-allocate the lists of OrtValues but don't populate them until
-	// Run() is called.
+	// We don't use the input and output list of OrtValues with these.
 	s := &AdvancedSession{
 		ortSession:  ortSession,
 		inputNames:  cInputNames,
 		outputNames: cOutputNames,
-		inputs:      make([]*C.OrtValue, len(inputNames)),
-		outputs:     make([]*C.OrtValue, len(outputNames)),
+		inputs:      nil,
+		outputs:     nil,
 	}
 	return &DynamicAdvancedSession{
 		s: s,
@@ -749,20 +748,29 @@ func (s *DynamicAdvancedSession) Destroy() error {
 // and output tensors must match the number (and order) of the input and output
 // names specified to NewDynamicAdvancedSession.
 func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
-	if len(inputs) != len(s.s.inputs) {
+	if len(inputs) != len(s.s.inputNames) {
 		return fmt.Errorf("The session specified %d input names, but Run() "+
-			"was called with %d input tensors", len(s.s.inputs), len(inputs))
+			"was called with %d input tensors", len(s.s.inputNames),
+			len(inputs))
 	}
-	if len(outputs) != len(s.s.outputs) {
+	if len(outputs) != len(s.s.outputNames) {
 		return fmt.Errorf("The session specified %d output names, but Run() "+
-			"was called with %d output tensors", len(s.s.outputs),
+			"was called with %d output tensors", len(s.s.outputNames),
 			len(outputs))
 	}
+	inputValues := make([]*C.OrtValue, len(inputs))
 	for i, v := range inputs {
-		s.s.inputs[i] = v.GetInternals().ortValue
+		inputValues[i] = v.GetInternals().ortValue
 	}
+	outputValues := make([]*C.OrtValue, len(outputs))
 	for i, v := range outputs {
-		s.s.outputs[i] = v.GetInternals().ortValue
+		outputValues[i] = v.GetInternals().ortValue
 	}
-	return s.s.Run()
+	status := C.RunOrtSession(s.s.ortSession, &inputValues[0],
+		&s.s.inputNames[0], C.int(len(inputs)), &outputValues[0],
+		&s.s.outputNames[0], C.int(len(outputs)))
+	if status != nil {
+		return fmt.Errorf("Error running network: %w", statusToError(status))
+	}
+	return nil
 }
