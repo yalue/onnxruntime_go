@@ -22,20 +22,32 @@ type testInputsInfo struct {
 	FlattenedOutput []float32 `json:"flattened_output"`
 }
 
+// If the ONNXRUNTIME_SHARED_LIBRARY_PATH environment variable is set, then
+// we'll try to use its contents as the location of the shared library for
+// these tests. Otherwise, we'll fall back to trying the shared library copies
+// in the test_data directory.
+func getTestSharedLibraryPath(t testing.TB) string {
+	toReturn := os.Getenv("ONNXRUNTIME_SHARED_LIBRARY_PATH")
+	if toReturn != "" {
+		return toReturn
+	}
+	if runtime.GOOS == "windows" {
+		return "test_data/onnxruntime.dll"
+	}
+	if runtime.GOARCH == "arm64" {
+		return "test_data/onnxruntime_arm64.so"
+	}
+	// TODO: If someone with apple wants to help out, add a x86 and arm64
+	// .dynlib path here.
+	return "test_data/onnxruntime.so"
+}
+
 // This must be called prior to running each test.
 func InitializeRuntime(t testing.TB) {
 	if IsInitialized() {
 		return
 	}
-	if runtime.GOOS == "windows" {
-		SetSharedLibraryPath("test_data/onnxruntime.dll")
-	} else {
-		if runtime.GOARCH == "arm64" {
-			SetSharedLibraryPath("test_data/onnxruntime_arm64.so")
-		} else {
-			SetSharedLibraryPath("test_data/onnxruntime.so")
-		}
-	}
+	SetSharedLibraryPath(getTestSharedLibraryPath(t))
 	e := InitializeEnvironment()
 	if e != nil {
 		t.Logf("Failed setting up onnxruntime environment: %s\n", e)
@@ -705,28 +717,32 @@ func BenchmarkOpMultiThreaded(b *testing.B) {
 	runNumThreadsBenchmark(b, 0)
 }
 
-func TestCUDASession(t *testing.T) {
-	InitializeRuntime(t)
-	defer CleanupRuntime(t)
-
+// Creates a SessionOptions struct that's configured to enable CUDA. Skips the
+// test if CUDA isn't supported. If some other error occurs, this will fail the
+// test instead. There may be other possible places for failures to occur due
+// to CUDA not being supported, or incorrectly configured, but this at least
+// checks for the ones I've encountered on my system.
+func getCUDASessionOptions(t testing.TB) *SessionOptions {
 	// First, create the CUDA options
 	cudaOptions, e := NewCUDAProviderOptions()
 	if e != nil {
 		// This is where things seem to fail if the onnxruntime library version
 		// doesn't support CUDA.
-		t.Logf("Error creating CUDA provider options: %s\n", e)
-		t.Logf("Your version of the onnxruntime library may not support CUDA.\n")
-		t.Logf("Skipping the remainder of this test.\n")
-		return
+		t.Skipf("Error creating CUDA provider options: %s. "+
+			"Your version of the onnxruntime library may not support CUDA. "+
+			"Skipping the remainder of this test.\n", e)
 	}
 	defer cudaOptions.Destroy()
 	e = cudaOptions.Update(map[string]string{"device_id": "0"})
 	if e != nil {
 		// This is where things seem to fail if the system doesn't support CUDA
-		t.Logf("Error updating CUDA options to use device ID 0: %s\n", e)
-		t.Logf("Your system may not support CUDA.\n")
-		t.Logf("Skipping the remainder of this test.\n")
-		return
+		// or if CUDA is misconfigured somehow (i.e. a wrong version that isn't
+		// supported by onnxruntime, libraries not being located correctly,
+		// etc.)
+		t.Skipf("Error updating CUDA options to use device ID 0: %s. "+
+			"Your system may not support CUDA, or CUDA may be misconfigured "+
+			"or a version incompatible with this version of onnxruntime. "+
+			"Skipping the remainder of this test.\n", e)
 	}
 	// Next, provide the CUDA options to the sesison options
 	sessionOptions, e := NewSessionOptions()
@@ -734,12 +750,19 @@ func TestCUDASession(t *testing.T) {
 		t.Logf("Error creating SessionOptions: %s\n", e)
 		t.FailNow()
 	}
-	defer sessionOptions.Destroy()
 	e = sessionOptions.AppendExecutionProviderCUDA(cudaOptions)
 	if e != nil {
 		t.Logf("Error setting CUDA execution provider options: %s\n", e)
 		t.FailNow()
 	}
+	return sessionOptions
+}
+
+func TestCUDASession(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getCUDASessionOptions(t)
+	defer sessionOptions.Destroy()
 
 	input, output := prepareBenchmarkTensors(t, 1337)
 	defer input.Destroy()
@@ -758,4 +781,31 @@ func TestCUDASession(t *testing.T) {
 		t.FailNow()
 	}
 	t.Logf("Ran session with CUDA OK.\n")
+}
+
+func BenchmarkCUDASession(b *testing.B) {
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	sessionOptions := getCUDASessionOptions(b)
+	defer sessionOptions.Destroy()
+	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, sessionOptions)
+	if e != nil {
+		b.Logf("Error creating session: %s\n", e)
+		b.FailNow()
+	}
+	defer session.Destroy()
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Logf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
+			b.FailNow()
+		}
+	}
 }

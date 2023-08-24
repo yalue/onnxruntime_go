@@ -33,7 +33,7 @@ onnxruntime shared libraries, as well.  If you need to use a different version,
 or if I get behind on updating this repository, updating or changing the
 onnxruntime version should be fairly easy:
 
- 1. Replace the `onnxrunteme_c_api.h` file with the version corresponding to
+ 1. Replace the `onnxruntime_c_api.h` file with the version corresponding to
     the onnxruntime version you wish to use.
 
  2. Replace the `test_data/onnxruntime.dll` (or `test_data/onnxruntime*.so`)
@@ -131,4 +131,37 @@ was added to rectify this mistake.  For backwards compatibility, the old typed
 be removed.  However, they now delegate their functionality to
 `AdvancedSession` internally.  New code should always favor using
 `AdvancedSession` directly.
+
+
+Running Tests and System Compatibility for Testing
+--------------------------------------------------
+
+Navigate to this directory and run `go test -v`, or optionally
+`go test -v -bench=.`.  All tests should pass; tests relating to CUDA or other
+accelerator support will be skipped on systems or onnxruntime builds that don't
+support them.
+
+Currently, this repository includes a copy of `onnxruntime.dll` for AMD64
+Windows, and `onnxruntime_arm64.so` for ARM64 Linux in its `test_data`
+directory, in order to (hopefully!) allow all tests to pass on those systems
+without users needing to copy additional libraries beyond cloning this
+repository. In the future, however, this may change if support for more systems
+are added or removed.
+
+You may want to use a different version of the `onnxruntime` shared library for
+a couple reasons.  In particular:
+
+ 1. The included shared library copies do not include support for CUDA or other
+    accelerated execution providers, so CUDA-related tests will always fail.
+
+ 2. Many systems, including AMD64 and i386 Linux, and ARM64 or x86 osx, do not
+    have shared libraries included in test_data in the first place. (At least
+    for now.)
+
+If these or other reasons apply to you, the test code will check the
+`ONNXRUNTIME_SHARED_LIBRARY_PATH` environment variable before attempting to
+load a library from `test_data/`. So, if you are using one of these systems or
+want accelerator-related tests to run, you should set the environment variable
+to the path to the onnxruntime shared library.  Afterwards, `go test -v` should
+run and pass.
 
