@@ -43,16 +43,57 @@ const char *GetErrorMessage(OrtStatus *status) {
   return ort_api->GetErrorMessage(status);
 }
 
+OrtStatus *CreateSessionOptions(OrtSessionOptions **o) {
+  return ort_api->CreateSessionOptions(o);
+}
+
+void ReleaseSessionOptions(OrtSessionOptions *o) {
+  ort_api->ReleaseSessionOptions(o);
+}
+
+OrtStatus *SetIntraOpNumThreads(OrtSessionOptions *o, int n) {
+  return ort_api->SetIntraOpNumThreads(o, n);
+}
+
+OrtStatus *SetInterOpNumThreads(OrtSessionOptions *o, int n) {
+  return ort_api->SetInterOpNumThreads(o, n);
+}
+
+OrtStatus *AppendExecutionProviderCUDAV2(OrtSessionOptions *o,
+  OrtCUDAProviderOptionsV2 *cuda_options) {
+  return ort_api->SessionOptionsAppendExecutionProvider_CUDA_V2(o,
+    cuda_options);
+}
+
+OrtStatus *CreateCUDAProviderOptions(OrtCUDAProviderOptionsV2 **o) {
+  return ort_api->CreateCUDAProviderOptions(o);
+}
+
+void ReleaseCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o) {
+  ort_api->ReleaseCUDAProviderOptions(o);
+}
+
+OrtStatus *UpdateCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o,
+  const char **keys, const char **values, int num_keys) {
+  return ort_api->UpdateCUDAProviderOptions(o, keys, values, num_keys);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
-  OrtEnv *env, OrtSession **out) {
+    OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
-  OrtSessionOptions *options = NULL;
-  status = ort_api->CreateSessionOptions(&options);
-  if (status) return status;
+  int default_options = 0;
+  if (!options) {
+    default_options = 1;
+    status = ort_api->CreateSessionOptions(&options);
+    if (status) return status;
+  }
   status = ort_api->CreateSessionFromArray(env, model_data, model_data_length,
     options, out);
-  // It's OK to release the session options now, right? The docs don't say.
-  ort_api->ReleaseSessionOptions(options);
+  if (default_options) {
+    // If we created a default, empty, options struct, we don't need to keep it
+    // after creating the session.
+    ort_api->ReleaseSessionOptions(options);
+  }
   return status;
 }
 

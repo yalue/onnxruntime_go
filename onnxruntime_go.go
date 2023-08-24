@@ -100,7 +100,6 @@ func InitializeEnvironment() error {
 		return fmt.Errorf("Error creating ORT memory info: %w",
 			statusToError(status))
 	}
-
 	return nil
 }
 
@@ -241,6 +240,22 @@ func (s Shape) Equals(other Shape) bool {
 	return true
 }
 
+// This wraps internal implementation details to avoid exposing them to users
+// via the ArbitraryTensor interface.
+type TensorInternalData struct {
+	ortValue *C.OrtValue
+}
+
+// An interface for managing tensors where we don't care about accessing the
+// underlying data slice. All typed tensors will support this interface,
+// regardless of the underlying data type.
+type ArbitraryTensor interface {
+	DataType() C.ONNXTensorElementDataType
+	GetShape() Shape
+	Destroy() error
+	GetInternals() *TensorInternalData
+}
+
 type Tensor[T TensorData] struct {
 	// The shape of the tensor
 	shape Shape
@@ -265,12 +280,24 @@ func (t *Tensor[T]) GetData() []T {
 	return t.data
 }
 
+// Returns the value from the ONNXTensorElementDataType C enum corresponding to
+// the type of data held by this tensor.
+func (t *Tensor[T]) DataType() C.ONNXTensorElementDataType {
+	return GetTensorElementDataType[T]()
+}
+
 // Returns the shape of the tensor. The returned shape is only a copy;
 // modifying this does *not* change the shape of the underlying tensor.
 // (Modifying the tensor's shape can only be accomplished by Destroying and
 // recreating the tensor with the same data.)
 func (t *Tensor[_]) GetShape() Shape {
 	return t.shape.Clone()
+}
+
+func (t *Tensor[_]) GetInternals() *TensorInternalData {
+	return &TensorInternalData{
+		ortValue: t.ortValue,
+	}
 }
 
 // Makes a deep copy of the tensor, including its ONNXRuntime value. The Tensor
@@ -339,33 +366,216 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 	return &toReturn, nil
 }
 
+// Holds options required when enabling the CUDA backend for a session. This
+// struct wraps C onnxruntime types; users must create instances of this using
+// the NewCUDAProviderOptions() function. So, to enable CUDA for a session,
+// follow these steps:
+//
+//  1. Call NewSessionOptions() to create a SessionOptions struct.
+//  2. Call NewCUDAProviderOptions() to obtain a CUDAProviderOptions struct.
+//  3. Call the CUDAProviderOptions struct's Update(...) function to pass a
+//     list of settings to CUDA. (See the comment on the Update() function.)
+//  4. Pass the CUDA options struct pointer to the
+//     SessionOptions.AppendExecutionProviderCUDA(...) function.
+//  5. Call the Destroy() function on the CUDA provider options.
+//  6. Call NewAdvancedSession(...), passing the SessionOptions struct to it.
+//  7. Call the Destroy() function on the SessionOptions struct.
+//
+// Admittedly, this is a bit of a mess, but that's how it's handled by the C
+// API internally. (The onnxruntime python API hides a bunch of this complexity
+// using getter and setter functions, for which Go does not have a terse
+// equivalent.)
+type CUDAProviderOptions struct {
+	o *C.OrtCUDAProviderOptionsV2
+}
+
+// Wraps the call to the UpdateCUDAProviderOptions in the onnxruntime C API.
+// Requires a list of string keys and values for configuring the CUDA backend.
+// For example, set the key "device_id" to "1" to use GPU 1 rather than 0.
+//
+// The onnxruntime headers refer users to
+// https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#configuration-options
+// for a full list of available keys and values.
+func (o *CUDAProviderOptions) Update(options map[string]string) error {
+	if len(options) == 0 {
+		return nil
+	}
+	keys := make([]*C.char, 0, len(options))
+	values := make([]*C.char, 0, len(options))
+	for k, v := range options {
+		keys = append(keys, C.CString(k))
+		values = append(values, C.CString(v))
+	}
+	// We don't need these C strings as soon as UpdateCUDAProviderOptions
+	// returns.
+	defer func() {
+		for i := range keys {
+			C.free(unsafe.Pointer(keys[i]))
+			C.free(unsafe.Pointer(values[i]))
+		}
+	}()
+	status := C.UpdateCUDAProviderOptions(o.o, &(keys[0]), &(values[0]),
+		C.int(len(options)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Must be called when the CUDAProviderOptions struct is no longer needed;
+// frees internal C-allocated state. Note that the CUDAProviderOptions struct
+// can be destroyed as soon as options.AppendExecutionProviderCUDA has been
+// called.
+func (o *CUDAProviderOptions) Destroy() error {
+	if o.o == nil {
+		return fmt.Errorf("The CUDAProviderOptions have not been initialized")
+	}
+	C.ReleaseCUDAProviderOptions(o.o)
+	o.o = nil
+	return nil
+}
+
+// Initializes and returns a CUDAProviderOptions struct, used when enabling
+// CUDA in a SessionOptions instance. (i.e., a CUDAProviderOptions must be
+// configured, then passed to SessionOptions.AppendExecutionProviderCUDA.)
+// The caller must call the Destroy() function on the returned struct when it's
+// no longer needed.
+func NewCUDAProviderOptions() (*CUDAProviderOptions, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	var o *C.OrtCUDAProviderOptionsV2
+	status := C.CreateCUDAProviderOptions(&o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &CUDAProviderOptions{
+		o: o,
+	}, nil
+}
+
+// Used to set options when creating an ONNXRuntime session. There is currently
+// not a way to change options after the session is created, apart from
+// destroying the session and creating a new one. This struct opaquely wraps a
+// C OrtSessionOptions struct, which users must modify via function calls. (The
+// OrtSessionOptions struct is opaque in the C API, too.)
+//
+// Users must instantiate this struct using the NewSessionOptions function.
+// Instances must be destroyed by calling the Destroy() method after the
+// options are no longer needed (after NewAdvancedSession(...) has returned).
+type SessionOptions struct {
+	o *C.OrtSessionOptions
+}
+
+func (o *SessionOptions) Destroy() error {
+	if o.o == nil {
+		return fmt.Errorf("The SessionOptions are not initialized")
+	}
+	C.ReleaseSessionOptions(o.o)
+	o.o = nil
+	return nil
+}
+
+// Sets the number of threads used to parallelize execution within onnxruntime
+// graph nodes. A value of 0 uses the default number of threads.
+func (o *SessionOptions) SetIntraOpNumThreads(n int) error {
+	if n < 0 {
+		return fmt.Errorf("Number of threads must be at least 0, got %d", n)
+	}
+	status := C.SetIntraOpNumThreads(o.o, C.int(n))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Sets the number of threads used to parallelize execution across separate
+// onnxruntime graph nodes. A value of 0 uses the default number of threads.
+func (o *SessionOptions) SetInterOpNumThreads(n int) error {
+	if n < 0 {
+		return fmt.Errorf("Number of threads must be at least 0, got %d", n)
+	}
+	status := C.SetInterOpNumThreads(o.o, C.int(n))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Takes a pointer to an initialized CUDAProviderOptions instance, and applies
+// them to the session options. This is what you'll need to call if you want
+// the session to use CUDA. Returns an error if your device (or onnxruntime
+// library) does not support CUDA. The CUDAProviderOptions struct can be
+// destroyed after this.
+func (o *SessionOptions) AppendExecutionProviderCUDA(
+	cudaOptions *CUDAProviderOptions) error {
+	status := C.AppendExecutionProviderCUDAV2(o.o, cudaOptions.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Initializes and returns a SessionOptions struct, used when setting options
+// in new AdvancedSession instances. The caller must call the Destroy()
+// function on the returned struct when it's no longer needed.
+func NewSessionOptions() (*SessionOptions, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	var o *C.OrtSessionOptions
+	status := C.CreateSessionOptions(&o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &SessionOptions{
+		o: o,
+	}, nil
+}
+
 // A wrapper around the OrtSession C struct. Requires the user to maintain all
 // input and output tensors, and to use the same data type for input and output
-// tensors.
-type Session[T TensorData] struct {
+// tensors. Created using NewAdvancedSession(...) or
+// NewAdvancedSessionWithONNXData(...). The caller is responsible for calling
+// the Destroy() function on each session when it is no longer needed.
+type AdvancedSession struct {
 	ortSession *C.OrtSession
 	// We convert the tensor names to C strings only once, and keep them around
 	// here for future calls to Run().
 	inputNames  []*C.char
 	outputNames []*C.char
-	// We only actually keep around the OrtValue pointers from the tensors.
+	// We only need the OrtValue pointers from the tensors when working with
+	// the C API.
 	inputs  []*C.OrtValue
 	outputs []*C.OrtValue
 }
 
-// Similar to Session, but does not require the specification of the input and output
-// shapes at session creation time, and allows for input and output tensors to have
-// different types. This allows for fully dynamic input to the onnx model.
-type DynamicSession[In TensorData, Out TensorData] struct {
-	ortSession  *C.OrtSession
-	inputNames  []*C.char
-	outputNames []*C.char
+func createCSession(onnxData []byte, options *SessionOptions) (*C.OrtSession,
+	error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	if len(onnxData) == 0 {
+		return nil, fmt.Errorf("Missing ONNX data")
+	}
+	var ortSession *C.OrtSession
+	var ortSessionOptions *C.OrtSessionOptions
+	if options != nil {
+		ortSessionOptions = options.o
+	}
+	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
+		C.size_t(len(onnxData)), ortEnv, &ortSession, ortSessionOptions)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return ortSession, nil
 }
 
-// The same as NewSession, but takes a slice of bytes containing the .onnx
-// network rather than a file path.
-func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
-	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+// The same as NewAdvancedSession, but takes a slice of bytes containing the
+// .onnx network rather than a file path.
+func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
+	outputNames []string, inputs, outputs []ArbitraryTensor,
+	options *SessionOptions) (*AdvancedSession, error) {
 	if !IsInitialized() {
 		return nil, NotInitializedError
 	}
@@ -384,15 +594,10 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 			len(outputs), len(outputNames))
 	}
 
-	var ortSession *C.OrtSession
-	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
-		C.size_t(len(onnxData)), ortEnv, &ortSession)
-	if status != nil {
-		return nil, fmt.Errorf("Error creating session: %w",
-			statusToError(status))
+	ortSession, e := createCSession(onnxData, options)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating C session: %w", e)
 	}
-	// ONNXRuntime copies the file content unless a specific flag is provided
-	// when creating the session (and we don't provide it!)
 
 	// Collect the inputs and outputs, along with their names, into a format
 	// more convenient for passing to the Run() function in the C API.
@@ -407,12 +612,12 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	inputOrtTensors := make([]*C.OrtValue, len(inputs))
 	outputOrtTensors := make([]*C.OrtValue, len(outputs))
 	for i, v := range inputs {
-		inputOrtTensors[i] = v.ortValue
+		inputOrtTensors[i] = v.GetInternals().ortValue
 	}
 	for i, v := range outputs {
-		outputOrtTensors[i] = v.ortValue
+		outputOrtTensors[i] = v.GetInternals().ortValue
 	}
-	return &Session[T]{
+	return &AdvancedSession{
 		ortSession:  ortSession,
 		inputNames:  cInputNames,
 		outputNames: cOutputNames,
@@ -421,50 +626,25 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	}, nil
 }
 
-// Similar to NewSessionWithOnnxData, but for dynamic sessions.
-func NewDynamicSessionWithONNXData[in TensorData, out TensorData](onnxData []byte, inputNames, outputNames []string) (*DynamicSession[in, out], error) {
-	var ortSession *C.OrtSession
-	status := C.CreateSession(unsafe.Pointer(&(onnxData[0])),
-		C.size_t(len(onnxData)), ortEnv, &ortSession)
-	if status != nil {
-		return nil, fmt.Errorf("Error creating session: %w",
-			statusToError(status))
-	}
-	// ONNXRuntime copies the file content unless a specific flag is provided
-	// when creating the session (and we don't provide it!)
-	cInputNames := make([]*C.char, len(inputNames))
-	cOutputNames := make([]*C.char, len(outputNames))
-	for i, v := range inputNames {
-		cInputNames[i] = C.CString(v)
-	}
-	for i, v := range outputNames {
-		cOutputNames[i] = C.CString(v)
-	}
-	return &DynamicSession[in, out]{
-		ortSession:  ortSession,
-		inputNames:  cInputNames,
-		outputNames: cOutputNames,
-	}, nil
-
-}
-
-// Loads the ONNX network at the given path, and initializes a Session
+// Loads the ONNX network at the given path, and initializes an AdvancedSession
 // instance. If this returns successfully, the caller must call Destroy() on
 // the returned session when it is no longer needed. We require the user to
 // provide the input and output tensors and names at this point, in order to
 // not need to re-allocate them every time Run() is called. The user instead
 // can just update or access the input/output tensor data after calling Run().
 // The input and output tensors MUST outlive this session, and calling
-// session.Destroy() will not destroy the input or output tensors.
-func NewSession[T TensorData](onnxFilePath string, inputNames,
-	outputNames []string, inputs, outputs []*Tensor[T]) (*Session[T], error) {
+// session.Destroy() will not destroy the input or output tensors. If the
+// provided SessionOptions pointer is nil, then the new session will use
+// default options.
+func NewAdvancedSession(onnxFilePath string, inputNames, outputNames []string,
+	inputs, outputs []ArbitraryTensor,
+	options *SessionOptions) (*AdvancedSession, error) {
 	fileContent, e := os.ReadFile(onnxFilePath)
 	if e != nil {
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
 	}
-
-	toReturn, e := NewSessionWithONNXData[T](fileContent, inputNames,
-		outputNames, inputs, outputs)
+	toReturn, e := NewAdvancedSessionWithONNXData(fileContent, inputNames,
+		outputNames, inputs, outputs, options)
 	if e != nil {
 		return nil, fmt.Errorf("Error creating session from %s: %w",
 			onnxFilePath, e)
@@ -472,22 +652,7 @@ func NewSession[T TensorData](onnxFilePath string, inputNames,
 	return toReturn, nil
 }
 
-// Same as NewSession, but for dynamic sessions.
-func NewDynamicSession[in TensorData, out TensorData](onnxFilePath string, inputNames, outputNames []string) (*DynamicSession[in, out], error) {
-	fileContent, e := os.ReadFile(onnxFilePath)
-	if e != nil {
-		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
-	}
-
-	toReturn, e := NewDynamicSessionWithONNXData[in, out](fileContent, inputNames, outputNames)
-	if e != nil {
-		return nil, fmt.Errorf("Error creating session from %s: %w",
-			onnxFilePath, e)
-	}
-	return toReturn, nil
-}
-
-func (s *Session[_]) Destroy() error {
+func (s *AdvancedSession) Destroy() error {
 	if s.ortSession != nil {
 		C.ReleaseOrtSession(s.ortSession)
 		s.ortSession = nil
@@ -505,24 +670,8 @@ func (s *Session[_]) Destroy() error {
 	return nil
 }
 
-func (s *DynamicSession[_, _]) Destroy() error {
-	if s.ortSession != nil {
-		C.ReleaseOrtSession(s.ortSession)
-		s.ortSession = nil
-	}
-	for i := range s.inputNames {
-		C.free(unsafe.Pointer(s.inputNames[i]))
-	}
-	s.inputNames = nil
-	for i := range s.outputNames {
-		C.free(unsafe.Pointer(s.outputNames[i]))
-	}
-	s.outputNames = nil
-	return nil
-}
-
 // Runs the session, updating the contents of the output tensors on success.
-func (s *Session[T]) Run() error {
+func (s *AdvancedSession) Run() error {
 	status := C.RunOrtSession(s.ortSession, &s.inputs[0], &s.inputNames[0],
 		C.int(len(s.inputs)), &s.outputs[0], &s.outputNames[0],
 		C.int(len(s.outputs)))
@@ -532,26 +681,88 @@ func (s *Session[T]) Run() error {
 	return nil
 }
 
-// Runs the dynamic session. Differently from the Session object, this method
-// requires the caller to provide the slice of input and output tensor pointer
-// of the right type. The resulting output is stored in the output tensors, and
-// it is the responsibility of the caller to destroy the tensors to free memory.
-func (s *DynamicSession[in, out]) Run(inputs []*Tensor[in], outputs []*Tensor[out]) error {
-	// create inputs
-	// destroying the input and output tensors will also destroy the ort values
-	inputOrtTensors := make([]*C.OrtValue, len(inputs))
+// This type of session does not require specifying input and output tensors
+// ahead of time, but allows users to pass the list of input and output tensors
+// when calling Run(). As with AdvancedSession, users must still call Destroy()
+// on an DynamicAdvancedSession that is no longer needed.
+type DynamicAdvancedSession struct {
+	// We may have further performance optimizations to this in the future, but
+	// for now it's just a regular AdvancedSession.
+	s *AdvancedSession
+}
+
+// Like NewAdvancedSessionWithONNXData, but does not require specifying input
+// and output tensors.
+func NewDynamicAdvancedSessionWithONNXData(onnxData []byte,
+	inputNames, outputNames []string,
+	options *SessionOptions) (*DynamicAdvancedSession, error) {
+	ortSession, e := createCSession(onnxData, options)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating C session: %w", e)
+	}
+	cInputNames := make([]*C.char, len(inputNames))
+	cOutputNames := make([]*C.char, len(outputNames))
+	for i, v := range inputNames {
+		cInputNames[i] = C.CString(v)
+	}
+	for i, v := range outputNames {
+		cOutputNames[i] = C.CString(v)
+	}
+	// We pre-allocate the lists of OrtValues but don't populate them until
+	// Run() is called.
+	s := &AdvancedSession{
+		ortSession:  ortSession,
+		inputNames:  cInputNames,
+		outputNames: cOutputNames,
+		inputs:      make([]*C.OrtValue, len(inputNames)),
+		outputs:     make([]*C.OrtValue, len(outputNames)),
+	}
+	return &DynamicAdvancedSession{
+		s: s,
+	}, nil
+}
+
+// Like NewAdvancedSession, but does not require specifying input and output
+// tensors.
+func NewDynamicAdvancedSession(onnxFilePath string, inputNames,
+	outputNames []string, options *SessionOptions) (*DynamicAdvancedSession,
+	error) {
+	fileContent, e := os.ReadFile(onnxFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+	}
+
+	toReturn, e := NewDynamicAdvancedSessionWithONNXData(fileContent,
+		inputNames, outputNames, options)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating dynamic session from %s: %w",
+			onnxFilePath, e)
+	}
+	return toReturn, nil
+}
+
+func (s *DynamicAdvancedSession) Destroy() error {
+	return s.s.Destroy()
+}
+
+// Runs the network on the given input and output tensors. The number of input
+// and output tensors must match the number (and order) of the input and output
+// names specified to NewDynamicAdvancedSession.
+func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
+	if len(inputs) != len(s.s.inputs) {
+		return fmt.Errorf("The session specified %d input names, but Run() "+
+			"was called with %d input tensors", len(s.s.inputs), len(inputs))
+	}
+	if len(outputs) != len(s.s.outputs) {
+		return fmt.Errorf("The session specified %d output names, but Run() "+
+			"was called with %d output tensors", len(s.s.outputs),
+			len(outputs))
+	}
 	for i, v := range inputs {
-		inputOrtTensors[i] = v.ortValue
+		s.s.inputs[i] = v.GetInternals().ortValue
 	}
-	outputOrtTensors := make([]*C.OrtValue, len(outputs))
 	for i, v := range outputs {
-		outputOrtTensors[i] = v.ortValue
+		s.s.outputs[i] = v.GetInternals().ortValue
 	}
-	status := C.RunOrtSession(s.ortSession, &inputOrtTensors[0], &s.inputNames[0],
-		C.int(len(inputs)), &outputOrtTensors[0], &s.outputNames[0],
-		C.int(len(outputs)))
-	if status != nil {
-		return fmt.Errorf("Error running network: %w", statusToError(status))
-	}
-	return nil
+	return s.s.Run()
 }

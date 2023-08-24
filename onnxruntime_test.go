@@ -3,10 +3,15 @@ package onnxruntime_go
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"runtime"
 	"testing"
 )
+
+// Always use the same RNG seed for benchmarks, so we can compare the
+// performance on the same random input data.
+const benchmarkRNGSeed = 12345678
 
 // This type is read from JSON and used to determine the inputs and expected
 // outputs for an ONNX network.
@@ -17,20 +22,32 @@ type testInputsInfo struct {
 	FlattenedOutput []float32 `json:"flattened_output"`
 }
 
+// If the ONNXRUNTIME_SHARED_LIBRARY_PATH environment variable is set, then
+// we'll try to use its contents as the location of the shared library for
+// these tests. Otherwise, we'll fall back to trying the shared library copies
+// in the test_data directory.
+func getTestSharedLibraryPath(t testing.TB) string {
+	toReturn := os.Getenv("ONNXRUNTIME_SHARED_LIBRARY_PATH")
+	if toReturn != "" {
+		return toReturn
+	}
+	if runtime.GOOS == "windows" {
+		return "test_data/onnxruntime.dll"
+	}
+	if runtime.GOARCH == "arm64" {
+		return "test_data/onnxruntime_arm64.so"
+	}
+	// TODO: If someone with apple wants to help out, add a x86 and arm64
+	// .dynlib path here.
+	return "test_data/onnxruntime.so"
+}
+
 // This must be called prior to running each test.
-func InitializeRuntime(t *testing.T) {
+func InitializeRuntime(t testing.TB) {
 	if IsInitialized() {
 		return
 	}
-	if runtime.GOOS == "windows" {
-		SetSharedLibraryPath("test_data/onnxruntime.dll")
-	} else {
-		if runtime.GOARCH == "arm64" {
-			SetSharedLibraryPath("test_data/onnxruntime_arm64.so")
-		} else {
-			SetSharedLibraryPath("test_data/onnxruntime.so")
-		}
-	}
+	SetSharedLibraryPath(getTestSharedLibraryPath(t))
 	e := InitializeEnvironment()
 	if e != nil {
 		t.Logf("Failed setting up onnxruntime environment: %s\n", e)
@@ -38,8 +55,17 @@ func InitializeRuntime(t *testing.T) {
 	}
 }
 
+// Should be called at the end of each test to de-initialize the runtime.
+func CleanupRuntime(t testing.TB) {
+	e := DestroyEnvironment()
+	if e != nil {
+		t.Logf("Error cleaning up environment: %s\n", e)
+		t.FailNow()
+	}
+}
+
 // Used to obtain the shape
-func parseInputsJSON(path string, t *testing.T) *testInputsInfo {
+func parseInputsJSON(path string, t testing.TB) *testInputsInfo {
 	toReturn := testInputsInfo{}
 	f, e := os.Open(path)
 	if e != nil {
@@ -73,6 +99,17 @@ func floatsEqual(a, b []float32) error {
 		}
 	}
 	return nil
+}
+
+// Returns an empty tensor with the given type and shape, or fails the test on
+// error.
+func newTestTensor[T TensorData](t testing.TB, s Shape) *Tensor[T] {
+	toReturn, e := NewEmptyTensor[T](s)
+	if e != nil {
+		t.Logf("Failed creating empty tensor with shape %s: %s\n", s, e)
+		t.FailNow()
+	}
+	return toReturn
 }
 
 func TestTensorTypes(t *testing.T) {
@@ -221,13 +258,7 @@ func TestCloneTensor(t *testing.T) {
 
 func TestExampleNetwork(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
 
 	// Create input and output tensors
 	inputs := parseInputsJSON("test_data/example_network_results.json", t)
@@ -238,11 +269,7 @@ func TestExampleNetwork(t *testing.T) {
 		t.FailNow()
 	}
 	defer inputTensor.Destroy()
-	outputTensor, e := NewEmptyTensor[float32](Shape(inputs.OutputShape))
-	if e != nil {
-		t.Logf("Failed creating output tensor: %s\n", e)
-		t.FailNow()
-	}
+	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
 	defer outputTensor.Destroy()
 
 	// Set up and run the session.
@@ -268,13 +295,7 @@ func TestExampleNetwork(t *testing.T) {
 
 func TestExampleNetworkDynamic(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
 
 	// Create input and output tensors
 	inputs := parseInputsJSON("test_data/example_network_results.json", t)
@@ -285,11 +306,7 @@ func TestExampleNetworkDynamic(t *testing.T) {
 		t.FailNow()
 	}
 	defer inputTensor.Destroy()
-	outputTensor, e := NewEmptyTensor[float32](Shape(inputs.OutputShape))
-	if e != nil {
-		t.Logf("Failed creating output tensor: %s\n", e)
-		t.FailNow()
-	}
+	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
 	defer outputTensor.Destroy()
 
 	// Set up and run the session without specifying the inputs and outputs shapes
@@ -315,13 +332,8 @@ func TestExampleNetworkDynamic(t *testing.T) {
 
 func TestEnableDisableTelemetry(t *testing.T) {
 	InitializeRuntime(t)
-	defer func() {
-		e := DestroyEnvironment()
-		if e != nil {
-			t.Logf("Error cleaning up environment: %s\n", e)
-			t.FailNow()
-		}
-	}()
+	defer CleanupRuntime(t)
+
 	e := EnableTelemetry()
 	if e != nil {
 		t.Logf("Error enabling onnxruntime telemetry: %s\n", e)
@@ -337,5 +349,463 @@ func TestEnableDisableTelemetry(t *testing.T) {
 		t.Logf("Error re-enabling onnxruntime telemetry after disabling: %s\n",
 			e)
 		t.Fail()
+	}
+}
+
+func TestArbitraryTensors(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	tensorShape := NewShape(2, 2)
+	tensorA, e := NewTensor(tensorShape, []uint8{1, 2, 3, 4})
+	if e != nil {
+		t.Logf("Error creating uint8 tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer tensorA.Destroy()
+	tensorB, e := NewTensor(tensorShape, []float64{5, 6, 7, 8})
+	if e != nil {
+		t.Logf("Error creating float64 tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer tensorB.Destroy()
+	tensorC, e := NewTensor(tensorShape, []int16{9, 10, 11, 12})
+	if e != nil {
+		t.Logf("Error creating int16 tensor: %s\n", e)
+		t.FailNow()
+	}
+	defer tensorC.Destroy()
+	tensorList := []ArbitraryTensor{tensorA, tensorB, tensorC}
+	for i, v := range tensorList {
+		ortValue := v.GetInternals().ortValue
+		t.Logf("ArbitraryTensor %d: Data type %d, shape %s, OrtValue %p\n",
+			i, v.DataType(), v.GetShape(), ortValue)
+	}
+}
+
+// Used for testing the operation of test_data/example_multitype.onnx
+func randomMultitypeInputs(t *testing.T, seed int64) (*Tensor[uint8],
+	*Tensor[float64]) {
+	rng := rand.New(rand.NewSource(seed))
+	inputA := newTestTensor[uint8](t, NewShape(1, 1, 1))
+	// We won't use newTestTensor here, otherwise we won't have a chance to
+	// destroy inputA on failure.
+	inputB, e := NewEmptyTensor[float64](NewShape(1, 2, 2))
+	if e != nil {
+		inputA.Destroy()
+		t.Logf("Failed creating input B: %s\n", e)
+		t.FailNow()
+	}
+	inputA.GetData()[0] = uint8(rng.Intn(256))
+	for i := 0; i < 4; i++ {
+		inputB.GetData()[i] = rng.Float64()
+	}
+	return inputA, inputB
+}
+
+// Used when checking the output produced by test_data/example_multitype.onnx
+func getExpectedMultitypeOutputs(inputA *Tensor[uint8],
+	inputB *Tensor[float64]) ([]int16, []int64) {
+	outputA := make([]int16, 4)
+	dataA := inputA.GetData()[0]
+	dataB := inputB.GetData()
+	for i := 0; i < len(outputA); i++ {
+		outputA[i] = int16((dataB[i] * float64(dataA)) - 512)
+	}
+	return outputA, []int64{int64(dataA) * 1234}
+}
+
+// Verifies that the given tensor's data matches the expected content. Prints
+// an error and fails the test if anything doesn't match.
+func verifyTensorData[T TensorData](t *testing.T, tensor *Tensor[T],
+	expectedContent []T) {
+	data := tensor.GetData()
+	if len(data) != len(expectedContent) {
+		t.Logf("Expected tensor to contain %d elements, but it contains %d.\n",
+			len(expectedContent), len(data))
+		t.FailNow()
+	}
+	for i, v := range expectedContent {
+		if v != data[i] {
+			t.Logf("Data mismatch at element index %d: expected %v, got %v\n",
+				i, v, data[i])
+			t.FailNow()
+		}
+	}
+}
+
+// Tests a session taking multiple input tensors of different types and
+// producing multiple output tensors of different types.
+func TestDifferentInputOutputTypes(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	inputA, inputB := randomMultitypeInputs(t, 9999)
+	defer inputA.Destroy()
+	defer inputB.Destroy()
+	outputA := newTestTensor[int16](t, NewShape(1, 2, 2))
+	defer outputA.Destroy()
+	outputB := newTestTensor[int64](t, NewShape(1, 1, 1))
+	defer outputB.Destroy()
+
+	session, e := NewAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"},
+		[]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{outputA, outputB}, nil)
+	if e != nil {
+		t.Logf("Failed creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running session: %s\n", e)
+		t.FailNow()
+	}
+	expectedA, expectedB := getExpectedMultitypeOutputs(inputA, inputB)
+	verifyTensorData(t, outputA, expectedA)
+	verifyTensorData(t, outputB, expectedB)
+}
+
+func TestDynamicDifferentInputOutputTypes(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	session, e := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"}, nil)
+	defer session.Destroy()
+
+	numTests := 100
+	aInputs := make([]*Tensor[uint8], numTests)
+	bInputs := make([]*Tensor[float64], numTests)
+	aOutputs := make([]*Tensor[int16], numTests)
+	bOutputs := make([]*Tensor[int64], numTests)
+
+	// Make sure we clean up all the tensors created for this test, even if we
+	// somehow fail before we've created them all.
+	defer func() {
+		for i := 0; i < numTests; i++ {
+			if aInputs[i] != nil {
+				aInputs[i].Destroy()
+			}
+			if bInputs[i] != nil {
+				bInputs[i].Destroy()
+			}
+			if aOutputs[i] != nil {
+				aOutputs[i].Destroy()
+			}
+			if bOutputs[i] != nil {
+				bOutputs[i].Destroy()
+			}
+		}
+	}()
+
+	// Actually create the inputs and run the tests.
+	for i := 0; i < numTests; i++ {
+		aInputs[i], bInputs[i] = randomMultitypeInputs(t, 999+int64(i))
+		aOutputs[i] = newTestTensor[int16](t, NewShape(1, 2, 2))
+		bOutputs[i] = newTestTensor[int64](t, NewShape(1, 1, 1))
+		e = session.Run([]ArbitraryTensor{aInputs[i], bInputs[i]},
+			[]ArbitraryTensor{aOutputs[i], bOutputs[i]})
+		if e != nil {
+			t.Logf("Failed running session for test %d: %s\n", i, e)
+			t.FailNow()
+		}
+	}
+
+	// Now that all the tests ran, check the outputs. If the
+	// DynamicAdvancedSession worked properly, each run should have only
+	// modified its given outputs.
+	for i := 0; i < numTests; i++ {
+		expectedA, expectedB := getExpectedMultitypeOutputs(aInputs[i],
+			bInputs[i])
+		verifyTensorData(t, aOutputs[i], expectedA)
+		verifyTensorData(t, bOutputs[i], expectedB)
+	}
+}
+
+func TestWrongInputs(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	session, e := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"}, nil)
+	defer session.Destroy()
+
+	inputA, inputB := randomMultitypeInputs(t, 123456)
+	defer inputA.Destroy()
+	defer inputB.Destroy()
+	outputA := newTestTensor[int16](t, NewShape(1, 2, 2))
+	defer outputA.Destroy()
+	outputB := newTestTensor[int64](t, NewShape(1, 1, 1))
+	defer outputB.Destroy()
+
+	// Make sure that passing a tensor with the wrong type but correct shape
+	// will correctly cause an error rather than a crash, whether used as an
+	// input or output.
+	wrongTypeTensor := newTestTensor[float32](t, NewShape(1, 2, 2))
+	defer wrongTypeTensor.Destroy()
+	e = session.Run([]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{wrongTypeTensor, outputB})
+	if e == nil {
+		t.Logf("Didn't get expected error when passing a float32 tensor in " +
+			"place of an int16 output tensor.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when passing a float32 tensor in place of an "+
+		"int16 output tensor: %s\n", e)
+	e = session.Run([]ArbitraryTensor{inputA, wrongTypeTensor},
+		[]ArbitraryTensor{outputA, outputB})
+	if e == nil {
+		t.Logf("Didn't get expected error when passing a float32 tensor in " +
+			"place of a float64 input tensor.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when passing a float32 tensor in place of a "+
+		"float64 input tensor: %s\n", e)
+
+	// Make sure that passing a tensor with the wrong shape but correct type
+	// will cause an error rather than a crash, when using as an input or an
+	// output.
+	wrongShapeInput := newTestTensor[uint8](t, NewShape(22))
+	defer wrongShapeInput.Destroy()
+	e = session.Run([]ArbitraryTensor{wrongShapeInput, inputB},
+		[]ArbitraryTensor{outputA, outputB})
+	if e == nil {
+		t.Logf("Didn't get expected error when running with an incorrectly " +
+			"shaped input.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when running with an incorrectly shaped "+
+		"input: %s\n", e)
+	wrongShapeOutput := newTestTensor[int64](t, NewShape(1, 1, 1, 1, 1, 1))
+	defer wrongShapeOutput.Destroy()
+	e = session.Run([]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{outputA, wrongShapeOutput})
+	if e == nil {
+		t.Logf("Didn't get expected error when running with an incorrectly " +
+			"shaped output.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when running with an incorrectly shaped "+
+		"output: %s\n", e)
+
+	e = session.Run([]ArbitraryTensor{inputA, inputB},
+		[]ArbitraryTensor{outputA, outputB})
+	if e != nil {
+		t.Logf("Got error attempting to (correctly) Run a session after "+
+			"attempting to use incorrect inputs or outputs: %s\n", e)
+		t.FailNow()
+	}
+}
+
+// See the comment in generate_network_big_compute.py for information about
+// the inputs and outputs used for testing or benchmarking session options.
+func prepareBenchmarkTensors(t testing.TB, seed int64) (*Tensor[float32],
+	*Tensor[float32]) {
+	vectorLength := int64(1024 * 1024 * 50)
+	inputData := make([]float32, vectorLength)
+	rng := rand.New(rand.NewSource(seed))
+	for i := range inputData {
+		inputData[i] = rng.Float32()
+	}
+	input, e := NewTensor(NewShape(1, vectorLength), inputData)
+	if e != nil {
+		t.Logf("Error creating input tensor: %s\n", e)
+		t.FailNow()
+	}
+	output, e := NewEmptyTensor[float32](NewShape(1, vectorLength))
+	if e != nil {
+		input.Destroy()
+		t.Logf("Error creating output tensor: %s\n", e)
+		t.FailNow()
+	}
+	return input, output
+}
+
+func TestSessionOptions(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	input, output := prepareBenchmarkTensors(t, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Logf("Error creating session options: %s\n", e)
+		t.FailNow()
+	}
+	defer options.Destroy()
+	e = options.SetIntraOpNumThreads(3)
+	if e != nil {
+		t.Logf("Error setting intra-op num threads: %s\n", e)
+		t.FailNow()
+	}
+	e = options.SetInterOpNumThreads(1)
+	if e != nil {
+		t.Logf("Error setting inter-op num threads: %s\n", e)
+		t.FailNow()
+	}
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, options)
+	if e != nil {
+		t.Logf("Error creating session with options: %s\n", e)
+		t.FailNow()
+	}
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running session: %s\n", e)
+		t.FailNow()
+	}
+}
+
+// Very similar to TestSessionOptions, but structured as a benchmark.
+func runNumThreadsBenchmark(b *testing.B, nThreads int) {
+	// Don't run the benchmark timer when doing initialization.
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+
+	// We'll use the same seed when running benchmarks, to compare the
+	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		b.Logf("Error creating options: %s\n", e)
+		b.FailNow()
+	}
+	defer options.Destroy()
+	e = options.SetIntraOpNumThreads(nThreads)
+	if e != nil {
+		b.Logf("Error setting intra-op threads to %d: %s\n", nThreads, e)
+		b.FailNow()
+	}
+	e = options.SetInterOpNumThreads(nThreads)
+	if e != nil {
+		b.Logf("Error setting inter-op threads to %d: %s\n", nThreads, e)
+		b.FailNow()
+	}
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, options)
+	if e != nil {
+		b.Logf("Error creating session: %s\n", e)
+		b.FailNow()
+	}
+	defer session.Destroy()
+
+	// Initialization is done; we can run the timer now.
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Logf("Failed running test %d/%d: %s\n", n+1, b.N, e)
+			b.FailNow()
+		}
+	}
+}
+
+func BenchmarkOpSingleThreaded(b *testing.B) {
+	runNumThreadsBenchmark(b, 1)
+}
+
+func BenchmarkOpMultiThreaded(b *testing.B) {
+	runNumThreadsBenchmark(b, 0)
+}
+
+// Creates a SessionOptions struct that's configured to enable CUDA. Skips the
+// test if CUDA isn't supported. If some other error occurs, this will fail the
+// test instead. There may be other possible places for failures to occur due
+// to CUDA not being supported, or incorrectly configured, but this at least
+// checks for the ones I've encountered on my system.
+func getCUDASessionOptions(t testing.TB) *SessionOptions {
+	// First, create the CUDA options
+	cudaOptions, e := NewCUDAProviderOptions()
+	if e != nil {
+		// This is where things seem to fail if the onnxruntime library version
+		// doesn't support CUDA.
+		t.Skipf("Error creating CUDA provider options: %s. "+
+			"Your version of the onnxruntime library may not support CUDA. "+
+			"Skipping the remainder of this test.\n", e)
+	}
+	defer cudaOptions.Destroy()
+	e = cudaOptions.Update(map[string]string{"device_id": "0"})
+	if e != nil {
+		// This is where things seem to fail if the system doesn't support CUDA
+		// or if CUDA is misconfigured somehow (i.e. a wrong version that isn't
+		// supported by onnxruntime, libraries not being located correctly,
+		// etc.)
+		t.Skipf("Error updating CUDA options to use device ID 0: %s. "+
+			"Your system may not support CUDA, or CUDA may be misconfigured "+
+			"or a version incompatible with this version of onnxruntime. "+
+			"Skipping the remainder of this test.\n", e)
+	}
+	// Next, provide the CUDA options to the sesison options
+	sessionOptions, e := NewSessionOptions()
+	if e != nil {
+		t.Logf("Error creating SessionOptions: %s\n", e)
+		t.FailNow()
+	}
+	e = sessionOptions.AppendExecutionProviderCUDA(cudaOptions)
+	if e != nil {
+		t.Logf("Error setting CUDA execution provider options: %s\n", e)
+		t.FailNow()
+	}
+	return sessionOptions
+}
+
+func TestCUDASession(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getCUDASessionOptions(t)
+	defer sessionOptions.Destroy()
+
+	input, output := prepareBenchmarkTensors(t, 1337)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, sessionOptions)
+	if e != nil {
+		t.Logf("Error creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running session with CUDA: %s\n", e)
+		t.FailNow()
+	}
+	t.Logf("Ran session with CUDA OK.\n")
+}
+
+func BenchmarkCUDASession(b *testing.B) {
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	sessionOptions := getCUDASessionOptions(b)
+	defer sessionOptions.Destroy()
+	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, sessionOptions)
+	if e != nil {
+		b.Logf("Error creating session: %s\n", e)
+		b.FailNow()
+	}
+	defer session.Destroy()
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Logf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
+			b.FailNow()
+		}
 	}
 }
