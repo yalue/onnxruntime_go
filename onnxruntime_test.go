@@ -35,6 +35,9 @@ func getTestSharedLibraryPath(t testing.TB) string {
 		return "test_data/onnxruntime.dll"
 	}
 	if runtime.GOARCH == "arm64" {
+		if runtime.GOOS == "darwin" {
+			return "test_data/onnxruntime_arm64.dylib"
+		}
 		return "test_data/onnxruntime_arm64.so"
 	}
 	// TODO: If someone with apple wants to help out, add a x86 and arm64
