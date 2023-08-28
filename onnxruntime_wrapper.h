@@ -76,6 +76,20 @@ void ReleaseCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o);
 OrtStatus *UpdateCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o,
   const char **keys, const char **values, int num_keys);
 
+// Wraps ort_api->CreateTensorRTProviderOptions
+OrtStatus *CreateTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 **o);
+
+// Wraps ort_api->ReleaseTensorRTProviderOptions
+void ReleaseTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 *o);
+
+// Wraps ort_api->UpdateTensorRTProviderOptions
+OrtStatus *UpdateTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 *o,
+  const char **keys, const char **values, int num_keys);
+
+// Wraps ort_api->SessionOptionsAppendExecutionProvider_TensorRT_V2
+OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
+  OrtTensorRTProviderOptionsV2 *tensor_rt_options);
+
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,

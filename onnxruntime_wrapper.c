@@ -78,6 +78,25 @@ OrtStatus *UpdateCUDAProviderOptions(OrtCUDAProviderOptionsV2 *o,
   return ort_api->UpdateCUDAProviderOptions(o, keys, values, num_keys);
 }
 
+OrtStatus *CreateTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 **o) {
+  return ort_api->CreateTensorRTProviderOptions(o);
+}
+
+void ReleaseTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 *o) {
+  ort_api->ReleaseTensorRTProviderOptions(o);
+}
+
+OrtStatus *UpdateTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 *o,
+  const char **keys, const char **values, int num_keys) {
+  return ort_api->UpdateTensorRTProviderOptions(o, keys, values, num_keys);
+}
+
+OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
+  OrtTensorRTProviderOptionsV2 *tensor_rt_options) {
+  return ort_api->SessionOptionsAppendExecutionProvider_TensorRT_V2(o,
+    tensor_rt_options);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
     OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
