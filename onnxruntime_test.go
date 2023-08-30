@@ -864,6 +864,7 @@ func TestCoreMLSession(t *testing.T) {
 }
 
 func BenchmarkCoreMLSession(b *testing.B) {
+	b.StopTimer()
 	InitializeRuntime(b)
 	defer CleanupRuntime(b)
 	sessionOptions := getCoreMLSessionOptions(b)

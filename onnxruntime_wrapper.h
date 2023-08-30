@@ -102,8 +102,8 @@ OrtStatus *UpdateTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 *o,
 OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
   OrtTensorRTProviderOptionsV2 *tensor_rt_options);
 
-// Wraps ort_api->SessionOptionsAppendExecutionProvider_CoreML, but only on
-// Apple devices. Stubs to a function that returns an error on other platforms.
+// Wraps OrtSessionOptionsAppendExecutionProvider_CoreML, exported from the
+// dylib on Apple devices. Safely returns a non-NULL status on other platforms.
 OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
   uint32_t flags);
 
