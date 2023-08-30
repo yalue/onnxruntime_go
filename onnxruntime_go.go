@@ -389,8 +389,29 @@ type CUDAProviderOptions struct {
 	o *C.OrtCUDAProviderOptionsV2
 }
 
+// Used when setting key-value pair options with certain obnoxious C APIs.
+// The entries in each of the returned slices must be freed when they're
+// no longer needed.
+func mapToCStrings(options map[string]string) ([]*C.char, []*C.char) {
+	keys := make([]*C.char, 0, len(options))
+	values := make([]*C.char, 0, len(options))
+	for k, v := range options {
+		keys = append(keys, C.CString(k))
+		values = append(values, C.CString(v))
+	}
+	return keys, values
+}
+
+// Calls free on each entry in the array of C strings.
+func freeCStrings(s []*C.char) {
+	for i := range s {
+		C.free(unsafe.Pointer(s[i]))
+		s[i] = nil
+	}
+}
+
 // Wraps the call to the UpdateCUDAProviderOptions in the onnxruntime C API.
-// Requires a list of string keys and values for configuring the CUDA backend.
+// Requires a map of string keys to values for configuring the CUDA backend.
 // For example, set the key "device_id" to "1" to use GPU 1 rather than 0.
 //
 // The onnxruntime headers refer users to
@@ -400,20 +421,9 @@ func (o *CUDAProviderOptions) Update(options map[string]string) error {
 	if len(options) == 0 {
 		return nil
 	}
-	keys := make([]*C.char, 0, len(options))
-	values := make([]*C.char, 0, len(options))
-	for k, v := range options {
-		keys = append(keys, C.CString(k))
-		values = append(values, C.CString(v))
-	}
-	// We don't need these C strings as soon as UpdateCUDAProviderOptions
-	// returns.
-	defer func() {
-		for i := range keys {
-			C.free(unsafe.Pointer(keys[i]))
-			C.free(unsafe.Pointer(values[i]))
-		}
-	}()
+	keys, values := mapToCStrings(options)
+	defer freeCStrings(keys)
+	defer freeCStrings(values)
 	status := C.UpdateCUDAProviderOptions(o.o, &(keys[0]), &(values[0]),
 		C.int(len(options)))
 	if status != nil {
@@ -428,7 +438,7 @@ func (o *CUDAProviderOptions) Update(options map[string]string) error {
 // called.
 func (o *CUDAProviderOptions) Destroy() error {
 	if o.o == nil {
-		return fmt.Errorf("The CUDAProviderOptions have not been initialized")
+		return fmt.Errorf("The CUDAProviderOptions are not initialized")
 	}
 	C.ReleaseCUDAProviderOptions(o.o)
 	o.o = nil
@@ -450,6 +460,64 @@ func NewCUDAProviderOptions() (*CUDAProviderOptions, error) {
 		return nil, statusToError(status)
 	}
 	return &CUDAProviderOptions{
+		o: o,
+	}, nil
+}
+
+// Like the CUDAProviderOptions struct, but used for configuring TensorRT
+// options. Instances of this struct must be initialized using
+// NewTensorRTProviderOptions() and cleaned up by calling their Destroy()
+// function when they are no longer needed.
+type TensorRTProviderOptions struct {
+	o *C.OrtTensorRTProviderOptionsV2
+}
+
+// Wraps the call to the UpdateTensorRTProviderOptions in the C API. Requires
+// a map of string keys to values.
+//
+// The onnxruntime headers refer users to
+// https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html#cc
+// for the list of available keys and values.
+func (o *TensorRTProviderOptions) Update(options map[string]string) error {
+	if len(options) == 0 {
+		return nil
+	}
+	keys, values := mapToCStrings(options)
+	defer freeCStrings(keys)
+	defer freeCStrings(values)
+	status := C.UpdateTensorRTProviderOptions(o.o, &(keys[0]), &(values[0]),
+		C.int(len(options)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Must be called when the TensorRTProviderOptions are no longer needed, in
+// order to free internal state. The struct is not needed as soon as you have
+// passed it to the AppendExecutionProviderTensorRT function.
+func (o *TensorRTProviderOptions) Destroy() error {
+	if o.o == nil {
+		return fmt.Errorf("The TensorRTProviderOptions are not initialized")
+	}
+	C.ReleaseTensorRTProviderOptions(o.o)
+	o.o = nil
+	return nil
+}
+
+// Initializes and returns a TensorRTProviderOptions struct, used when enabling
+// the TensorRT backend. The caller must call the Destroy() function on the
+// returned struct when it's no longer needed.
+func NewTensorRTProviderOptions() (*TensorRTProviderOptions, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	var o *C.OrtTensorRTProviderOptionsV2
+	status := C.CreateTensorRTProviderOptions(&o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &TensorRTProviderOptions{
 		o: o,
 	}, nil
 }
@@ -510,6 +578,20 @@ func (o *SessionOptions) SetInterOpNumThreads(n int) error {
 func (o *SessionOptions) AppendExecutionProviderCUDA(
 	cudaOptions *CUDAProviderOptions) error {
 	status := C.AppendExecutionProviderCUDAV2(o.o, cudaOptions.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Takes an initialized TensorRTProviderOptions instance, and applies them to
+// the session options. You'll need to call this if you want the session to use
+// TensorRT. Returns an error if your device (or onnxruntime library version)
+// does not support TensorRT. The TensorRTProviderOptions can be destroyed
+// after this.
+func (o *SessionOptions) AppendExecutionProviderTensorRT(
+	tensorRTOptions *TensorRTProviderOptions) error {
+	status := C.AppendExecutionProviderTensorRTV2(o.o, tensorRTOptions.o)
 	if status != nil {
 		return statusToError(status)
 	}
