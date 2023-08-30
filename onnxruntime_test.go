@@ -626,14 +626,59 @@ func prepareBenchmarkTensors(t testing.TB, seed int64) (*Tensor[float32],
 	return input, output
 }
 
+// Used mostly when testing different execution providers. Runs the
+// example_big_compute.onnx network on a session created with the given
+// options. May fail or skip the test on error. The runtime must have already
+// been initialized when calling this.
+func testBigSessionWithOptions(t *testing.T, options *SessionOptions) {
+	input, output := prepareBenchmarkTensors(t, 1337)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+	[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+	[]ArbitraryTensor{output}, options)
+	if e != nil {
+		t.Logf("Error creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	e = session.Run()
+	if e != nil {
+		t.Logf("Error running the session: %s\n", e)
+		t.FailNow()
+	}
+}
+
+// Used when benchmarking different execution providers. Otherwise, basically
+// identical in usage to testBigSessionWithOptions.
+func benchmarkBigSessionWithOptions(b *testing.B, options *SessionOptions) {
+	// It's also OK for the caller to have already stopped the timer, but we'll
+	// make sure it's stopped here.
+	b.StopTimer()
+	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
+		[]ArbitraryTensor{output}, options)
+	if e != nil {
+		b.Logf("Error creating session: %s\n", e)
+		b.FailNow()
+	}
+	defer session.Destroy()
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Logf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
+			b.FailNow()
+		}
+	}
+}
+
 func TestSessionOptions(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
-
-	input, output := prepareBenchmarkTensors(t, benchmarkRNGSeed)
-	defer input.Destroy()
-	defer output.Destroy()
-
 	options, e := NewSessionOptions()
 	if e != nil {
 		t.Logf("Error creating session options: %s\n", e)
@@ -650,18 +695,7 @@ func TestSessionOptions(t *testing.T) {
 		t.Logf("Error setting inter-op num threads: %s\n", e)
 		t.FailNow()
 	}
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, options)
-	if e != nil {
-		t.Logf("Error creating session with options: %s\n", e)
-		t.FailNow()
-	}
-	e = session.Run()
-	if e != nil {
-		t.Logf("Error running session: %s\n", e)
-		t.FailNow()
-	}
+	testBigSessionWithOptions(t, options)
 }
 
 // Very similar to TestSessionOptions, but structured as a benchmark.
@@ -670,12 +704,6 @@ func runNumThreadsBenchmark(b *testing.B, nThreads int) {
 	b.StopTimer()
 	InitializeRuntime(b)
 	defer CleanupRuntime(b)
-
-	// We'll use the same seed when running benchmarks, to compare the
-	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
-	defer input.Destroy()
-	defer output.Destroy()
-
 	options, e := NewSessionOptions()
 	if e != nil {
 		b.Logf("Error creating options: %s\n", e)
@@ -692,24 +720,7 @@ func runNumThreadsBenchmark(b *testing.B, nThreads int) {
 		b.Logf("Error setting inter-op threads to %d: %s\n", nThreads, e)
 		b.FailNow()
 	}
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, options)
-	if e != nil {
-		b.Logf("Error creating session: %s\n", e)
-		b.FailNow()
-	}
-	defer session.Destroy()
-
-	// Initialization is done; we can run the timer now.
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		e = session.Run()
-		if e != nil {
-			b.Logf("Failed running test %d/%d: %s\n", n+1, b.N, e)
-			b.FailNow()
-		}
-	}
+	benchmarkBigSessionWithOptions(b, options)
 }
 
 func BenchmarkOpSingleThreaded(b *testing.B) {
@@ -755,6 +766,7 @@ func getCUDASessionOptions(t testing.TB) *SessionOptions {
 	}
 	e = sessionOptions.AppendExecutionProviderCUDA(cudaOptions)
 	if e != nil {
+		sessionOptions.Destroy()
 		t.Logf("Error setting CUDA execution provider options: %s\n", e)
 		t.FailNow()
 	}
@@ -766,24 +778,7 @@ func TestCUDASession(t *testing.T) {
 	defer CleanupRuntime(t)
 	sessionOptions := getCUDASessionOptions(t)
 	defer sessionOptions.Destroy()
-
-	input, output := prepareBenchmarkTensors(t, 1337)
-	defer input.Destroy()
-	defer output.Destroy()
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, sessionOptions)
-	if e != nil {
-		t.Logf("Error creating session: %s\n", e)
-		t.FailNow()
-	}
-	defer session.Destroy()
-	e = session.Run()
-	if e != nil {
-		t.Logf("Error running session with CUDA: %s\n", e)
-		t.FailNow()
-	}
-	t.Logf("Ran session with CUDA OK.\n")
+	testBigSessionWithOptions(t, sessionOptions)
 }
 
 func BenchmarkCUDASession(b *testing.B) {
@@ -792,25 +787,7 @@ func BenchmarkCUDASession(b *testing.B) {
 	defer CleanupRuntime(b)
 	sessionOptions := getCUDASessionOptions(b)
 	defer sessionOptions.Destroy()
-	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
-	defer input.Destroy()
-	defer output.Destroy()
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, sessionOptions)
-	if e != nil {
-		b.Logf("Error creating session: %s\n", e)
-		b.FailNow()
-	}
-	defer session.Destroy()
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		e = session.Run()
-		if e != nil {
-			b.Logf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
-			b.FailNow()
-		}
-	}
+	benchmarkBigSessionWithOptions(b, sessionOptions)
 }
 
 // Creates a SessionOptions struct that's configured to enable TensorRT.
@@ -839,6 +816,7 @@ func getTensorRTSessionOptions(t testing.TB) *SessionOptions {
 	}
 	e = sessionOptions.AppendExecutionProviderTensorRT(trtOptions)
 	if e != nil {
+		sessionOptions.Destroy()
 		t.Logf("Error setting TensorRT execution provider: %s\n", e)
 		t.FailNow()
 	}
@@ -850,24 +828,7 @@ func TestTensorRTSession(t *testing.T) {
 	defer CleanupRuntime(t)
 	sessionOptions := getTensorRTSessionOptions(t)
 	defer sessionOptions.Destroy()
-
-	input, output := prepareBenchmarkTensors(t, 1337)
-	defer input.Destroy()
-	defer output.Destroy()
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, sessionOptions)
-	if e != nil {
-		t.Logf("Error creating session: %s\n", e)
-		t.FailNow()
-	}
-	defer session.Destroy()
-	e = session.Run()
-	if e != nil {
-		t.Logf("Error running session with TensorRT: %s\n", e)
-		t.FailNow()
-	}
-	t.Logf("Ran session with TensorRT OK.\n")
+	testBigSessionWithOptions(t, sessionOptions)
 }
 
 func BenchmarkTensorRTSession(b *testing.B) {
@@ -876,23 +837,36 @@ func BenchmarkTensorRTSession(b *testing.B) {
 	defer CleanupRuntime(b)
 	sessionOptions := getTensorRTSessionOptions(b)
 	defer sessionOptions.Destroy()
-	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
-	defer input.Destroy()
-	defer output.Destroy()
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, sessionOptions)
+	benchmarkBigSessionWithOptions(b, sessionOptions)
+}
+
+func getCoreMLSessionOptions(t testing.TB) *SessionOptions {
+	options, e := NewSessionOptions()
 	if e != nil {
-		b.Logf("Error creating session: %s\n", e)
-		b.FailNow()
+		t.Logf("Error creating session options: %s\n", e)
+		t.FailNow()
 	}
-	defer session.Destroy()
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		e = session.Run()
-		if e != nil {
-			b.Logf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
-			b.FailNow()
-		}
+	e = options.AppendExecutionProviderCoreML(0)
+	if e != nil {
+		options.Destroy()
+		t.Skipf("Couldn't enable CoreML: %s. This may be due to your system "+
+			"or onnxruntime library version not supporting CoreML.\n", e)
 	}
+	return options
+}
+
+func TestCoreMLSession(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getCoreMLSessionOptions(t)
+	defer sessionOptions.Destroy()
+	testBigSessionWithOptions(t, sessionOptions)
+}
+
+func BenchmarkCoreMLSession(b *testing.B) {
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	sessionOptions := getCoreMLSessionOptions(b)
+	defer sessionOptions.Destroy()
+	benchmarkBigSessionWithOptions(b, sessionOptions)
 }
