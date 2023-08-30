@@ -43,16 +43,18 @@ func platformCleanup() error {
 
 // Should only be called on Apple systems; looks up the CoreML provider
 // function which should only be exported on apple onnxruntime dylib files.
-// For now, this will never return an error; instead it will silently set the
-// coreml provider function to a null pointer which will be detected at
-// runtime.
 func setAppendCoreMLFunctionPointer(libraryHandle unsafe.Pointer) error {
 	// This function name must match the name in coreml_provider_factory.h,
 	// which is provided in the onnxruntime release's include/ directory on for
 	// Apple platforms.
-	cFunctionName := C.CString("OrtSessionOptionsAppendExecutionProvider_CoreML")
+	fnName := "OrtSessionOptionsAppendExecutionProvider_CoreML"
+	cFunctionName := C.CString(fnName)
 	defer C.free(unsafe.Pointer(cFunctionName))
 	appendCoreMLProviderProc := C.dlsym(libraryHandle, cFunctionName)
+	if appendCoreMLProviderProc == nil {
+		msg := C.GoString(C.dlerror())
+		return fmt.Errorf("Error looking up %s: %s", fnName, msg)
+	}
 	C.SetCoreMLProviderFunctionPointer(appendCoreMLProviderProc)
 	return nil
 }
@@ -85,15 +87,14 @@ func platformInitializeEnvironment() error {
 		return fmt.Errorf("Error setting ORT API base: %d", tmp)
 	}
 	if (runtime.GOOS == "darwin") || (runtime.GOOS == "ios") {
-		e = setAppendCoreMLFunctionPointer(handle)
-		if e != nil {
-			// This shouldn't actually ever happen in the current
-			// implementation; instead the coreml function should remain NULL,
-			// which will cause AppendExecutionProviderCoreML to return an
-			// error at runtime.
-			C.dlclose(handle)
-			return fmt.Errorf("Error finding CoreML functionality: %w", e)
-		}
+		setAppendCoreMLFunctionPointer(handle)
+		// We'll silently ignore potential errors returned by
+		// setAppendCoreMLFunctionPointer (for now at least). Even though we're
+		// on Apple hardware, it's possible that the user will have compiled
+		// the onnxruntime library from source without CoreML support.
+		// A failure here will only leave the coreml function pointer as NULL
+		// in our C code, which will be detected and result in an error at
+		// runtime.
 	}
 	libraryHandle = handle
 	return nil
