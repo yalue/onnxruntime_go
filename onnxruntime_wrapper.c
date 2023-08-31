@@ -2,11 +2,17 @@
 
 static const OrtApi *ort_api = NULL;
 
+static AppendCoreMLProviderFn append_coreml_provider_fn = NULL;
+
 int SetAPIFromBase(OrtApiBase *api_base) {
   if (!api_base) return 1;
   ort_api = api_base->GetApi(ORT_API_VERSION);
   if (!ort_api) return 2;
   return 0;
+}
+
+void SetCoreMLProviderFunctionPointer(void *ptr) {
+  append_coreml_provider_fn = (AppendCoreMLProviderFn) ptr;
 }
 
 void ReleaseOrtStatus(OrtStatus *status) {
@@ -95,6 +101,15 @@ OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
   OrtTensorRTProviderOptionsV2 *tensor_rt_options) {
   return ort_api->SessionOptionsAppendExecutionProvider_TensorRT_V2(o,
     tensor_rt_options);
+}
+
+OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
+  uint32_t flags) {
+  if (!append_coreml_provider_fn) {
+    return ort_api->CreateStatus(ORT_NOT_IMPLEMENTED, "Your platform or "
+      "onnxruntime library does not support CoreML");
+  }
+  return append_coreml_provider_fn(o, flags);
 }
 
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,

@@ -598,6 +598,26 @@ func (o *SessionOptions) AppendExecutionProviderTensorRT(
 	return nil
 }
 
+// Enables the CoreML backend for the given session options on supported
+// platforms. Unlike the other AppendExecutionProvider* functions, this one
+// only takes a bitfield of flags rather than an options object, though it
+// wouldn't suprise me if onnxruntime deprecated this API in the future as it
+// did with the others. If that happens, we'll likely add a
+// CoreMLProviderOptions struct and an AppendExecutionProviderCoreMLV2 function
+// to the Go wrapper library, but for now the simpler API is the only thing
+// available.
+//
+// Regardless, the meanings of the flag bits are currently defined in the
+// coreml_provider_factor.h file which is provided in the include/ directory of
+// the onnxruntime releases for Apple platforms.
+func (o *SessionOptions) AppendExecutionProviderCoreML(flags uint32) error {
+	status := C.AppendExecutionProviderCoreML(o.o, C.uint32_t(flags))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.

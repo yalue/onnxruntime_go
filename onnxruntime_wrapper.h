@@ -22,9 +22,21 @@
 extern "C" {
 #endif
 
+// Used for the OrtSessionOptionsAppendExecutionProvider_CoreML function
+// pointer on supported systems. Must match the signature in
+// coreml_provider_factory.h provided along with the onnxruntime releases for
+// Apple platforms.
+typedef OrtStatus* (*AppendCoreMLProviderFn)(OrtSessionOptions*, uint32_t);
+
 // Takes a pointer to the api_base struct in order to obtain the OrtApi
 // pointer. Intended to be called from Go. Returns nonzero on error.
 int SetAPIFromBase(OrtApiBase *api_base);
+
+// OrtSessionOptionsAppendExecutionProvider_CoreML is exported directly from
+// the Apple .dylib, so we call this function on Apple platforms to set the
+// function pointer to the correct address. On other platforms, the function
+// pointer should remain NULL.
+void SetCoreMLProviderFunctionPointer(void *ptr);
 
 // Wraps ort_api->ReleaseStatus(status)
 void ReleaseOrtStatus(OrtStatus *status);
@@ -89,6 +101,11 @@ OrtStatus *UpdateTensorRTProviderOptions(OrtTensorRTProviderOptionsV2 *o,
 // Wraps ort_api->SessionOptionsAppendExecutionProvider_TensorRT_V2
 OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
   OrtTensorRTProviderOptionsV2 *tensor_rt_options);
+
+// Wraps OrtSessionOptionsAppendExecutionProvider_CoreML, exported from the
+// dylib on Apple devices. Safely returns a non-NULL status on other platforms.
+OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
+  uint32_t flags);
 
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
