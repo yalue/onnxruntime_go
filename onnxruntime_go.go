@@ -185,7 +185,7 @@ func (s Shape) FlattenedSize() int64 {
 }
 
 // Returns a non-nil error if the shape has bad or zero dimensions. May return
-// a ZeroShapeLengthError, a ShapeOverflowError, or an BadShapeDimensionError.
+// a ZeroShapeLengthError, a ShapeOverflowError, or a BadShapeDimensionError.
 // In the future, this may return other types of errors if it others become
 // necessary.
 func (s Shape) Validate() error {
@@ -256,6 +256,11 @@ type ArbitraryTensor interface {
 	GetInternals() *TensorInternalData
 }
 
+// Used to manage all input and output data for onnxruntime networks. A Tensor
+// always has an associated type and refers to data contained in an underlying
+// Go slice. New tensors should be created using the NewTensor or
+// NewEmptyTensor functions, and must be destroyed using the Destroy function
+// when no longer needed.
 type Tensor[T TensorData] struct {
 	// The shape of the tensor
 	shape Shape
@@ -608,7 +613,7 @@ func (o *SessionOptions) AppendExecutionProviderTensorRT(
 // available.
 //
 // Regardless, the meanings of the flag bits are currently defined in the
-// coreml_provider_factor.h file which is provided in the include/ directory of
+// coreml_provider_factory.h file which is provided in the include/ directory of
 // the onnxruntime releases for Apple platforms.
 func (o *SessionOptions) AppendExecutionProviderCoreML(flags uint32) error {
 	status := C.AppendExecutionProviderCoreML(o.o, C.uint32_t(flags))
