@@ -40,8 +40,6 @@ func getTestSharedLibraryPath(t testing.TB) string {
 		}
 		return "test_data/onnxruntime_arm64.so"
 	}
-	// TODO: If someone with apple wants to help out, add a x86 and arm64
-	// .dynlib path here.
 	return "test_data/onnxruntime.so"
 }
 
