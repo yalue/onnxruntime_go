@@ -98,15 +98,20 @@ import (
 )
 
 func main() {
-    // This line may be optional, by default the library will try to load
+    // This line _may_ be optional; by default the library will try to load
     // "onnxruntime.dll" on Windows, and "onnxruntime.so" on any other system.
+    // For stability, it is probably a good idea to always set this explicitly.
     ort.SetSharedLibraryPath("path/to/onnxruntime.so")
 
     err := ort.InitializeEnvironment()
     defer ort.DestroyEnvironment()
 
-    // To make it easier to work with the C API, this library requires the user
-    // to create all input and output tensors prior to creating the session.
+    // For a slight performance boost and convenience when re-using existing
+    // tensors, this library expects the user to create all input and output
+    // tensors prior to creating the session. If this isn't ideal for your use
+    // case, see the DynamicAdvancedSession type in the documnentation, which
+    // allows input and output tensors to be specified when calling Run()
+    // rather than when initializing a session.
     inputData := []float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
     inputShape := ort.NewShape(2, 5)
     inputTensor, err := ort.NewTensor(inputShape, inputData)
@@ -122,12 +127,15 @@ func main() {
     defer session.Destroy()
 
     // Calling Run() will run the network, reading the current contents of the
-    // input tensors and modifying the contents of the output tensors. Simply
-    // modify the input tensor's data (available via inputTensor.GetData())
-    // before calling Run().
+    // input tensors and modifying the contents of the output tensors.
     err = session.Run()
 
+    // Get a slice view of the output tensor's data.
     outputData := outputTensor.GetData()
+
+    // If you want to run the network on a different input, all you need to do
+    // is modify the input tensor data (available via inputTensor.GetData())
+    // and call Run() again.
 
     // ...
 }
