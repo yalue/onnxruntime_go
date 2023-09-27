@@ -163,22 +163,22 @@ Navigate to this directory and run `go test -v`, or optionally
 accelerator support will be skipped on systems or onnxruntime builds that don't
 support them.
 
-Currently, this repository includes a copy of `onnxruntime.dll` for AMD64
-Windows, and `onnxruntime_arm64.so` for ARM64 Linux in its `test_data`
-directory, in order to (hopefully!) allow all tests to pass on those systems
-without users needing to copy additional libraries beyond cloning this
-repository. In the future, however, this may change if support for more systems
-are added or removed.
+Currently, this repository includes a copy of the onnxruntime shared libraries
+for a few systems, including AMD64 windows, ARM64 Linux, and ARM64 darwin.
+These should allow tests to pass on those systems without users needing to copy
+additional libraries beyond cloning this repository. In the future, however,
+this may change if support for more systems are added or removed.
 
 You may want to use a different version of the `onnxruntime` shared library for
 a couple reasons.  In particular:
 
  1. The included shared library copies do not include support for CUDA or other
-    accelerated execution providers, so CUDA-related tests will always fail.
+    accelerated execution providers, so CUDA-related tests will always be
+    skipped if you use the default libraries in this repo.
 
  2. Many systems, including AMD64 and i386 Linux, and ARM64 or x86 osx, do not
-    have shared libraries included in test_data in the first place. (At least
-    for now.)
+    have shared libraries included in `test_data/` in the first place. (At
+    least for now.)
 
 If these or other reasons apply to you, the test code will check the
 `ONNXRUNTIME_SHARED_LIBRARY_PATH` environment variable before attempting to
