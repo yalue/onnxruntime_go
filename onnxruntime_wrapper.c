@@ -157,3 +157,27 @@ OrtStatus *CreateOrtTensorWithShape(void *data, size_t data_size,
     shape, shape_size, dtype, out);
   return status;
 }
+
+OrtStatus *GetTensorTypeAndShape(const OrtValue *value, OrtTensorTypeAndShapeInfo **out) {
+  return ort_api->GetTensorTypeAndShape(value, out);
+}
+
+OrtStatus *GetDimensionsCount(const OrtTensorTypeAndShapeInfo *info, size_t *out) {
+  return ort_api->GetDimensionsCount(info, out);
+}
+
+OrtStatus *GetDimensions(const OrtTensorTypeAndShapeInfo *info, int64_t *dim_values, size_t dim_values_length) {
+  return ort_api->GetDimensions(info, dim_values, dim_values_length);
+}
+
+OrtStatus *GetTensorElementType(const OrtTensorTypeAndShapeInfo *info, enum ONNXTensorElementDataType *out) {
+  return ort_api->GetTensorElementType(info, out);
+}
+
+void ReleaseTensorTypeAndShapeInfo(OrtTensorTypeAndShapeInfo *input) {
+  ort_api->ReleaseTensorTypeAndShapeInfo(input);
+}
+
+OrtStatus *GetTensorMutableData(OrtValue *value, void **out) {
+  return ort_api->GetTensorMutableData(value, out);
+}
