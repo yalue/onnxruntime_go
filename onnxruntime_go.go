@@ -1068,7 +1068,7 @@ func createTensorFromOrtValue(v *C.OrtValue) (ArbitraryTensor, error) {
 // Runs the network on the given input and output tensors. The number of input
 // and output tensors must match the number (and order) of the input and output
 // names specified to NewDynamicAdvancedSession.
-// If a given output is null, it will be allocated and the slice will be modified
+// If a given output is nil, it will be allocated and the slice will be modified
 // to include the new tensor. The new tensor must be freed by calling Destroy on it.
 func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
 	if len(inputs) != len(s.s.inputNames) {

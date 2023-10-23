@@ -526,6 +526,45 @@ func TestDynamicDifferentInputOutputTypes(t *testing.T) {
 	}
 }
 
+func TestDynamicAllocatedOutputTensor(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	session, err := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
+		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"}, nil)
+	defer session.Destroy()
+
+	// Actually create the inputs and run the tests.
+	aInput, bInput := randomMultitypeInputs(t, 999)
+	var outputs [2]ArbitraryTensor
+	err = session.Run([]ArbitraryTensor{aInput, bInput}, outputs[:])
+	if err != nil {
+		t.Logf("Failed running session: %s\n", err)
+		t.FailNow()
+	}
+
+	expectedA, expectedB := getExpectedMultitypeOutputs(aInput, bInput)
+	if outputA, ok := outputs[0].(*Tensor[int16]); !ok {
+		t.Logf("Expected outputA to be of type %T, got of type %T\n", outputA, outputs[0])
+		t.FailNow()
+	} else if expectedShape := NewShape(1, 2, 2); !outputA.shape.Equals(expectedShape) {
+		t.Logf("Expected outputA to be of shape %s, got of shape %s\n", expectedShape, outputA.shape)
+		t.FailNow()
+	} else {
+		verifyTensorData(t, outputA, expectedA)
+	}
+	if outputB, ok := outputs[1].(*Tensor[int64]); !ok {
+		t.Logf("Expected outputB to be of type %T, got of type %T\n", outputB, outputs[1])
+		t.FailNow()
+	} else if expectedShape := NewShape(1, 1, 1); !outputB.shape.Equals(expectedShape) {
+		t.Logf("Expected outputB to be of shape %s, got of shape %s\n", expectedShape, outputB.shape)
+		t.FailNow()
+	} else {
+		verifyTensorData(t, outputB, expectedB)
+	}
+
+}
+
 func TestWrongInputs(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
