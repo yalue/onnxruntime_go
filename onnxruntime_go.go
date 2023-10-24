@@ -1003,9 +1003,73 @@ func (s *DynamicAdvancedSession) Destroy() error {
 	return s.s.Destroy()
 }
 
+func createTensorWithCData[T TensorData](shape Shape, data unsafe.Pointer) (*Tensor[T], error) {
+	totalSize := shape.FlattenedSize()
+	actualData := unsafe.Slice((*T)(data), totalSize)
+	return NewTensor[T](shape, actualData)
+}
+
+func createTensorFromOrtValue(v *C.OrtValue) (ArbitraryTensor, error) {
+	var pInfo *C.OrtTensorTypeAndShapeInfo
+	status := C.GetTensorTypeAndShape(v, &pInfo)
+	if status != nil {
+		return nil, fmt.Errorf("error getting type and shape: %w", statusToError(status))
+	}
+	var dimCount C.size_t
+	status = C.GetDimensionsCount(pInfo, &dimCount)
+	if status != nil {
+		return nil, fmt.Errorf("error getting dimensions count: %w", statusToError(status))
+	}
+	shape := make(Shape, dimCount)
+	status = C.GetDimensions(pInfo, (*C.int64_t)(&shape[0]), dimCount)
+	if status != nil {
+		return nil, fmt.Errorf("error getting dimensions: %w", statusToError(status))
+	}
+	var tensorElementType C.ONNXTensorElementDataType
+	status = C.GetTensorElementType(pInfo, (*uint32)(&tensorElementType))
+	if status != nil {
+		return nil, fmt.Errorf("error getting element type: %w", statusToError(status))
+	}
+	C.ReleaseTensorTypeAndShapeInfo(pInfo)
+	var tensorData unsafe.Pointer
+	status = C.GetTensorMutableData(v, &tensorData)
+	if status != nil {
+		return nil, fmt.Errorf("error getting tensor mutable data: %w", statusToError(status))
+	}
+
+	switch tensorType := TensorElementDataType(tensorElementType); tensorType {
+	case TensorElementDataTypeFloat:
+		return createTensorWithCData[float32](shape, tensorData)
+	case TensorElementDataTypeUint8:
+		return createTensorWithCData[uint8](shape, tensorData)
+	case TensorElementDataTypeInt8:
+		return createTensorWithCData[int8](shape, tensorData)
+	case TensorElementDataTypeUint16:
+		return createTensorWithCData[uint16](shape, tensorData)
+	case TensorElementDataTypeInt16:
+		return createTensorWithCData[int16](shape, tensorData)
+	case TensorElementDataTypeInt32:
+		return createTensorWithCData[int32](shape, tensorData)
+	case TensorElementDataTypeInt64:
+		return createTensorWithCData[int64](shape, tensorData)
+	case TensorElementDataTypeDouble:
+		return createTensorWithCData[float64](shape, tensorData)
+	case TensorElementDataTypeUint32:
+		return createTensorWithCData[uint32](shape, tensorData)
+	case TensorElementDataTypeUint64:
+		return createTensorWithCData[uint64](shape, tensorData)
+	default:
+		totalSize := shape.FlattenedSize()
+		actualData := unsafe.Slice((*byte)(tensorData), totalSize)
+		return NewCustomDataTensor(shape, actualData, tensorType)
+	}
+}
+
 // Runs the network on the given input and output tensors. The number of input
 // and output tensors must match the number (and order) of the input and output
 // names specified to NewDynamicAdvancedSession.
+// If a given output is nil, it will be allocated and the slice will be modified
+// to include the new tensor. The new tensor must be freed by calling Destroy on it.
 func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
 	if len(inputs) != len(s.s.inputNames) {
 		return fmt.Errorf("The session specified %d input names, but Run() "+
@@ -1023,13 +1087,24 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
 	}
 	outputValues := make([]*C.OrtValue, len(outputs))
 	for i, v := range outputs {
-		outputValues[i] = v.GetInternals().ortValue
+		if v != nil {
+			outputValues[i] = v.GetInternals().ortValue
+		}
 	}
 	status := C.RunOrtSession(s.s.ortSession, &inputValues[0],
 		&s.s.inputNames[0], C.int(len(inputs)), &outputValues[0],
 		&s.s.outputNames[0], C.int(len(outputs)))
 	if status != nil {
 		return fmt.Errorf("Error running network: %w", statusToError(status))
+	}
+	for i, v := range outputs {
+		if v == nil {
+			var err error
+			outputs[i], err = createTensorFromOrtValue(outputValues[i])
+			if err != nil {
+				return fmt.Errorf("Error creating tensor from ort: %w", err)
+			}
+		}
 	}
 	return nil
 }
