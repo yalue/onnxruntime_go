@@ -394,13 +394,20 @@ const (
 	TensorElementDataTypeUint32    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32
 	TensorElementDataTypeUint64    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64
 
-	// Not supported by onnxruntime (as of onnxruntime version 1.15.1)
+	// Not supported by onnxruntime (as of onnxruntime version 1.16.1)
 	TensorElementDataTypeComplex64 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64
-	// Not supported by onnxruntime (as of onnxruntime version 1.15.1)
+	// Not supported by onnxruntime (as of onnxruntime version 1.16.1)
 	TensorElementDataTypeComplex128 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128
 
 	// Non-IEEE floating-point format based on IEEE754 single-precision
 	TensorElementDataTypeBFloat16 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16
+
+	// 8-bit float types, introduced in onnx 1.14.  See
+	// https://onnx.ai/onnx/technical/float8.html
+	TensorElementDataTypeFloat8E4M3FN   = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FN
+	TensorElementDataTypeFloat8E4M3FNUZ = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FNUZ
+	TensorElementDataTypeFloat8E5M2     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2
+	TensorElementDataTypeFloat8E5M2FNUZ = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2FNUZ
 )
 
 func (t TensorElementDataType) String() string {
@@ -439,6 +446,14 @@ func (t TensorElementDataType) String() string {
 		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128"
 	case TensorElementDataTypeBFloat16:
 		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16"
+	case TensorElementDataTypeFloat8E4M3FN:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FN"
+	case TensorElementDataTypeFloat8E4M3FNUZ:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FNUZ"
+	case TensorElementDataTypeFloat8E5M2:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2"
+	case TensorElementDataTypeFloat8E5M2FNUZ:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2FNUZ"
 	}
 	return fmt.Sprintf("Unknown tensor element data type: %d", int(t))
 }
