@@ -93,11 +93,11 @@ func floatsEqual(a, b []float32) error {
 		diff := a[i] - b[i]
 		if diff < 0 {
 			diff = -diff
-			// Arbitrarily chosen precision.
-			if diff >= 0.00000001 {
-				return fmt.Errorf("Data element %d doesn't match: %f vs %v",
-					i, a[i], b[i])
-			}
+		}
+		// Arbitrarily chosen precision.
+		if diff >= 0.00000001 {
+			return fmt.Errorf("Data element %d doesn't match: %f vs %v",
+				i, a[i], b[i])
 		}
 	}
 	return nil
