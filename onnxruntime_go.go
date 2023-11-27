@@ -254,6 +254,7 @@ type ArbitraryTensor interface {
 	GetShape() Shape
 	Destroy() error
 	GetInternals() *TensorInternalData
+	ZeroContents()
 }
 
 // Used to manage all input and output data for onnxruntime networks. A Tensor
@@ -266,6 +267,8 @@ type Tensor[T TensorData] struct {
 	shape Shape
 	// The go slice containing the flattened data that backs the ONNX tensor.
 	data []T
+	// The number of bytes taken by the data slice.
+	dataSize uintptr
 	// The underlying ONNX value we use with the C API.
 	ortValue *C.OrtValue
 }
@@ -275,6 +278,7 @@ func (t *Tensor[_]) Destroy() error {
 	C.ReleaseOrtValue(t.ortValue)
 	t.ortValue = nil
 	t.data = nil
+	t.dataSize = 0
 	t.shape = nil
 	return nil
 }
@@ -307,6 +311,11 @@ func (t *Tensor[_]) GetInternals() *TensorInternalData {
 	return &TensorInternalData{
 		ortValue: t.ortValue,
 	}
+}
+
+// Sets every element in the tensor's underlying data slice to 0.
+func (t *Tensor[T]) ZeroContents() {
+	C.memset(unsafe.Pointer(&t.data[0]), 0, C.size_t(t.dataSize))
 }
 
 // Makes a deep copy of the tensor, including its ONNXRuntime value. The Tensor
@@ -366,6 +375,7 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 
 	toReturn := Tensor[T]{
 		data:     data[0:elementCount],
+		dataSize: dataSize,
 		shape:    s.Clone(),
 		ortValue: ortValue,
 	}
@@ -531,6 +541,11 @@ func (t *CustomDataTensor) GetInternals() *TensorInternalData {
 	return &TensorInternalData{
 		ortValue: t.ortValue,
 	}
+}
+
+// Sets all bytes in the data slice to 0.
+func (t *CustomDataTensor) ZeroContents() {
+	C.memset(unsafe.Pointer(&t.data[0]), 0, C.size_t(len(t.data)))
 }
 
 // Returns the same slice that was passed to NewCustomDataTensor.
