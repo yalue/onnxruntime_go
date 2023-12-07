@@ -65,6 +65,18 @@ OrtStatus *SetInterOpNumThreads(OrtSessionOptions *o, int n) {
   return ort_api->SetInterOpNumThreads(o, n);
 }
 
+OrtStatus *SetCpuMemArena(OrtSessionOptions *o, int use_arena){
+  if (use_arena)
+    return ort_api->EnableCpuMemArena(o);
+  return ort_api->DisableCpuMemArena(o);
+}
+
+OrtStatus *SetMemPattern(OrtSessionOptions *o, int use_mem_pattern){
+  if (use_mem_pattern)
+    return ort_api->EnableMemPattern(o);
+  return ort_api->DisableMemPattern(o);
+}
+
 OrtStatus *AppendExecutionProviderCUDAV2(OrtSessionOptions *o,
   OrtCUDAProviderOptionsV2 *cuda_options) {
   return ort_api->SessionOptionsAppendExecutionProvider_CUDA_V2(o,
