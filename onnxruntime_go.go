@@ -757,6 +757,34 @@ func (o *SessionOptions) SetInterOpNumThreads(n int) error {
 	return nil
 }
 
+// Enable/Disable the usage of the memory arena on CPU.
+// Arena may pre-allocate memory for future usage.
+func (o *SessionOptions) SetCpuMemArena(isEnabled bool) error {
+	n := 0
+	if isEnabled {
+		n = 1
+	}
+	status := C.SetCpuMemArena(o.o, C.int(n))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Enable/Disable the memory pattern optimization.
+// If this is enabled memory is preallocated if all shapes are known.
+func (o *SessionOptions) SetMemPattern(isEnabled bool) error {
+	n := 0
+	if isEnabled {
+		n = 1
+	}
+	status := C.SetMemPattern(o.o, C.int(n))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Takes a pointer to an initialized CUDAProviderOptions instance, and applies
 // them to the session options. This is what you'll need to call if you want
 // the session to use CUDA. Returns an error if your device (or onnxruntime

@@ -926,6 +926,16 @@ func TestSessionOptions(t *testing.T) {
 		t.Logf("Error setting inter-op num threads: %s\n", e)
 		t.FailNow()
 	}
+	e = options.SetCpuMemArena(true)
+	if e != nil {
+		t.Logf("Error setting CPU memory arena: %s\n", e)
+		t.FailNow()
+	}
+	e = options.SetMemPattern(true)
+	if e != nil {
+		t.Logf("Error setting memory pattern: %s\n", e)
+		t.FailNow()
+	}
 	testBigSessionWithOptions(t, options)
 }
 
