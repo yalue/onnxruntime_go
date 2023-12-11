@@ -115,11 +115,16 @@ func newTestTensor[T TensorData](t testing.TB, s Shape) *Tensor[T] {
 }
 
 func TestTensorTypes(t *testing.T) {
-	// It would be nice to compare this, but doing that would require exposing
-	// the underlying C types in Go; the testing package doesn't support cgo.
 	type myFloat float64
-	dataType := GetTensorElementDataType[myFloat]()
-	t.Logf("Got data type for float64-based double: %d\n", dataType)
+	dataType := TensorElementDataType(GetTensorElementDataType[myFloat]())
+	expected := TensorElementDataType(TensorElementDataTypeDouble)
+	if dataType != expected {
+		t.Logf("Expected float64 data type to be %d (%s), got %d (%s)\n",
+			expected, expected, dataType, dataType)
+		t.FailNow()
+	}
+	t.Logf("Got data type for float64-based double: %d (%s)\n",
+		dataType, dataType)
 }
 
 func TestCreateTensor(t *testing.T) {
