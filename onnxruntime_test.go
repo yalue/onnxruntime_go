@@ -1117,3 +1117,35 @@ func BenchmarkCoreMLSession(b *testing.B) {
 	defer sessionOptions.Destroy()
 	benchmarkBigSessionWithOptions(b, sessionOptions)
 }
+
+func getDirectMLSessionOptions(t testing.TB) *SessionOptions {
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Logf("Error creating session options: %s\n", e)
+		t.FailNow()
+	}
+	e = options.AppendExecutionProviderDirectML(0)
+	if e != nil {
+		options.Destroy()
+		t.Skipf("Couldn't enable DirectML: %s. This may be due to your "+
+			"system or onnxruntime library version not supporting DirectML.\n",
+			e)
+	}
+	return options
+}
+
+func TestDirectMLSession(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getDirectMLSessionOptions(t)
+	defer sessionOptions.Destroy()
+	testBigSessionWithOptions(t, sessionOptions)
+}
+
+func BenchmarkDirectMLSession(b *testing.B) {
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	sessionOptions := getDirectMLSessionOptions(b)
+	defer sessionOptions.Destroy()
+	benchmarkBigSessionWithOptions(b, sessionOptions)
+}

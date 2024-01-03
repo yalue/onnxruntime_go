@@ -833,6 +833,18 @@ func (o *SessionOptions) AppendExecutionProviderCoreML(flags uint32) error {
 	return nil
 }
 
+// Enables the DirectML backend for the given session options on supported
+// platforms. See the notes on device_id in coreml_provider_factory.h in the
+// onnxruntime source code, but a device ID should correspond to the default
+// device, "which is typically the primary display GPU" according to the docs.
+func (o *SessionOptions) AppendExecutionProviderDirectML(deviceID int) error {
+	status := C.AppendExecutionProviderDirectML(o.o, C.int(deviceID))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.
