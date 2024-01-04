@@ -4,6 +4,32 @@ static const OrtApi *ort_api = NULL;
 
 static AppendCoreMLProviderFn append_coreml_provider_fn = NULL;
 
+// The dml_provider_factory.h header for using DirectML is annoying to include
+// here for a couple reasons:
+//  - It contains C++
+//  - It includes d3d12.h and DirectML.h, both of which may be hard to set up
+//    under mingw
+// Fortunately, the basic AppendExecutionProvider_DML function from the
+// OrtDmlApi struct does not rely on any of these things, but we still need the
+// struct definition itself. Obviously, copying it here is not perfect, and
+// we'll need to keep an eye on it to make sure it doesn't change between
+// updates. Most importantly, we need to make sure that the one function we
+// care about remains at the same place in the struct.  Since it's first,
+// hopefully it's unlikely to change.
+typedef OrtStatus* (*AppendDirectMLProviderFn)(OrtSessionOptions*, int);
+typedef struct {
+  AppendDirectMLProviderFn SessionOptionsAppendExecutionProvider_DML;
+  // All of these functions pointers should be irrelevant (and they depend on
+  // other definitions from dml_provider_factory.h), but I'll copy them here
+  // regardless as plain void*s. GetExecutionProviderApi shouldn't write to
+  // this struct anyway, as it only provides a const pointer to it.
+  void *SessionOptionsAppendExecutionProvider_DML1;
+  void *CreateGPUAllocationFromD3DResource;
+  void *FreeGPUAllocation;
+  void *GetD3D12ResourceFromAllocation;
+  void *SessionOptionsAppendExecutionProvider_DML2;
+} DummyOrtDMLAPI;
+
 int SetAPIFromBase(OrtApiBase *api_base) {
   if (!api_base) return 1;
   ort_api = api_base->GetApi(ORT_API_VERSION);
@@ -122,6 +148,17 @@ OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
       "onnxruntime library does not support CoreML");
   }
   return append_coreml_provider_fn(o, flags);
+}
+
+OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,
+  int device_id) {
+  DummyOrtDMLAPI *dml_api = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetExecutionProviderApi("DML", ORT_API_VERSION,
+    (const void **) (&dml_api));
+  if (status) return status;
+  status = dml_api->SessionOptionsAppendExecutionProvider_DML(o, device_id);
+  return status;
 }
 
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,

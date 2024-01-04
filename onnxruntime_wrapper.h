@@ -113,6 +113,11 @@ OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
 OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
   uint32_t flags);
 
+// Wraps getting the OrtDmlApi struct and calling
+// dml_api->SessionOptionsAppendExecutionProvider_DML.
+OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,
+  int device_id);
+
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
