@@ -688,6 +688,66 @@ func TestWrongInputs(t *testing.T) {
 	}
 }
 
+func TestGetInputOutputInfo(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	file := "test_data/example_several_inputs_and_outputs.onnx"
+	inputs, outputs, e := GetInputOutputInfo(file)
+	if e != nil {
+		t.Logf("Error getting input and output info for %s: %s\n", file, e)
+		t.FailNow()
+	}
+	if len(inputs) != 3 {
+		t.Logf("Expected 3 inputs, got %d\n", len(inputs))
+		t.FailNow()
+	}
+	if len(outputs) != 2 {
+		t.Logf("Expected 2 outputs, got %d\n", len(outputs))
+		t.FailNow()
+	}
+	for i, v := range inputs {
+		t.Logf("Input %d: %s\n", i, &v)
+	}
+	for i, v := range outputs {
+		t.Logf("Output %d: %s\n", i, &v)
+	}
+
+	if outputs[1].Name != "output 2" {
+		t.Logf("Incorrect output 1 name: %s, expected \"output 2\"\n",
+			outputs[1].Name)
+		t.Fail()
+	}
+	expectedShape := NewShape(1, 2, 3, 4, 5)
+	if !outputs[1].Dimensions.Equals(expectedShape) {
+		t.Logf("Incorrect output 1 shape: %s, expected %s\n",
+			outputs[1].Dimensions, expectedShape)
+		t.Fail()
+	}
+	var expectedType TensorElementDataType = TensorElementDataTypeDouble
+	if outputs[1].DataType != expectedType {
+		t.Logf("Incorrect output 1 data type: %s, expected %s\n",
+			outputs[1].DataType, expectedType)
+		t.Fail()
+	}
+	if inputs[0].Name != "input 1" {
+		t.Logf("Incorrect input 0 name: %s, expected \"input 1\"\n",
+			inputs[0].Name)
+		t.Fail()
+	}
+	expectedShape = NewShape(2, 5, 2, 5)
+	if !inputs[0].Dimensions.Equals(expectedShape) {
+		t.Logf("Incorrect input 0 shape: %s, expected %s\n",
+			inputs[0].Dimensions, expectedShape)
+		t.Fail()
+	}
+	expectedType = TensorElementDataTypeInt32
+	if inputs[0].DataType != expectedType {
+		t.Logf("Incorrect input 0 data type: %s, expected %s\n",
+			inputs[0].DataType, expectedType)
+		t.Fail()
+	}
+}
+
 func randomBytes(seed, n int64) []byte {
 	toReturn := make([]byte, n)
 	rng := rand.New(rand.NewSource(seed))

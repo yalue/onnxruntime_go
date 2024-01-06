@@ -194,6 +194,14 @@ void ReleaseOrtSession(OrtSession *session) {
   ort_api->ReleaseSession(session);
 }
 
+OrtStatus *SessionGetInputCount(OrtSession *session, size_t *result) {
+  return ort_api->SessionGetInputCount(session, result);
+}
+
+OrtStatus *SessionGetOutputCount(OrtSession *session, size_t *result) {
+  return ort_api->SessionGetOutputCount(session, result);
+}
+
 void ReleaseOrtValue(OrtValue *value) {
   ort_api->ReleaseValue(value);
 }
@@ -229,4 +237,48 @@ void ReleaseTensorTypeAndShapeInfo(OrtTensorTypeAndShapeInfo *input) {
 
 OrtStatus *GetTensorMutableData(OrtValue *value, void **out) {
   return ort_api->GetTensorMutableData(value, out);
+}
+
+OrtStatus *SessionGetInputName(OrtSession *session, size_t i, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->SessionGetInputName(session, i, allocator, name);
+}
+
+OrtStatus *SessionGetOutputName(OrtSession *session, size_t i, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->SessionGetOutputName(session, i, allocator, name);
+}
+
+OrtStatus *FreeWithDefaultORTAllocator(void *to_free) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->AllocatorFree(allocator, to_free);
+}
+
+OrtStatus *SessionGetInputTypeInfo(OrtSession *session, size_t i,
+  OrtTypeInfo **out) {
+  return ort_api->SessionGetInputTypeInfo(session, i, out);
+}
+
+OrtStatus *SessionGetOutputTypeInfo(OrtSession *session, size_t i,
+  OrtTypeInfo **out) {
+  return ort_api->SessionGetOutputTypeInfo(session, i, out);
+}
+
+void ReleaseTypeInfo(OrtTypeInfo *o) {
+  ort_api->ReleaseTypeInfo(o);
+}
+
+OrtStatus *CastTypeInfoToTensorInfo(OrtTypeInfo *type_info,
+  OrtTensorTypeAndShapeInfo **out) {
+  return ort_api->CastTypeInfoToTensorInfo(type_info,
+    (const OrtTensorTypeAndShapeInfo **) out);
 }

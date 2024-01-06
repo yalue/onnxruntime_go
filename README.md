@@ -43,6 +43,12 @@ onnxruntime version should be fairly easy:
     file with the version corresponding to the onnxruntime version you wish to
     use.
 
+ 3. (If you care about DirectML support) Verify that the entries in the
+    `DummyOrtDMLAPI` struct in `onnxruntime_wrapper.c` match the order in which
+    they appear in the `OrtDmlApi` struct from the `dml_provider_factory.h`
+    header in the official repo.  See the comment on this struct in
+    `onnxruntime_wrapper.c` for more information.
+
 Note that both the C API header and the shared library files are available to
 download from the releases page in the
 [official repo](https://github.com/microsoft/onnxruntime). Download the archive

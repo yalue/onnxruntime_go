@@ -835,8 +835,9 @@ func (o *SessionOptions) AppendExecutionProviderCoreML(flags uint32) error {
 
 // Enables the DirectML backend for the given session options on supported
 // platforms. See the notes on device_id in coreml_provider_factory.h in the
-// onnxruntime source code, but a device ID should correspond to the default
-// device, "which is typically the primary display GPU" according to the docs.
+// onnxruntime source code, but a device ID of 0 should correspond to the
+// default device, "which is typically the primary display GPU" according to
+// the docs.
 func (o *SessionOptions) AppendExecutionProviderDirectML(deviceID int) error {
 	status := C.AppendExecutionProviderDirectML(o.o, C.int(deviceID))
 	if status != nil {
@@ -1079,32 +1080,47 @@ func createTensorWithCData[T TensorData](shape Shape, data unsafe.Pointer) (*Ten
 	return NewTensor[T](shape, actualData)
 }
 
+// Returns the Shape described by a TensorTypeAndShapeInfo instance.
+func getShapeFromInfo(t *C.OrtTensorTypeAndShapeInfo) (Shape, error) {
+	var dimCount C.size_t
+	status := C.GetDimensionsCount(t, &dimCount)
+	if status != nil {
+		return nil, fmt.Errorf("Error getting dimension count: %w",
+			statusToError(status))
+	}
+	shape := make(Shape, dimCount)
+	status = C.GetDimensions(t, (*C.int64_t)(&shape[0]), dimCount)
+	if status != nil {
+		return nil, fmt.Errorf("Error getting shape dimensions: %w",
+			statusToError(status))
+	}
+	return shape, nil
+}
+
 func createTensorFromOrtValue(v *C.OrtValue) (ArbitraryTensor, error) {
 	var pInfo *C.OrtTensorTypeAndShapeInfo
 	status := C.GetTensorTypeAndShape(v, &pInfo)
 	if status != nil {
-		return nil, fmt.Errorf("error getting type and shape: %w", statusToError(status))
+		return nil, fmt.Errorf("Error getting type and shape: %w",
+			statusToError(status))
 	}
-	var dimCount C.size_t
-	status = C.GetDimensionsCount(pInfo, &dimCount)
-	if status != nil {
-		return nil, fmt.Errorf("error getting dimensions count: %w", statusToError(status))
-	}
-	shape := make(Shape, dimCount)
-	status = C.GetDimensions(pInfo, (*C.int64_t)(&shape[0]), dimCount)
-	if status != nil {
-		return nil, fmt.Errorf("error getting dimensions: %w", statusToError(status))
+	shape, e := getShapeFromInfo(pInfo)
+	if e != nil {
+		return nil, fmt.Errorf("Error getting shape from TypeAndShapeInfo: %w",
+			e)
 	}
 	var tensorElementType C.ONNXTensorElementDataType
 	status = C.GetTensorElementType(pInfo, (*uint32)(&tensorElementType))
 	if status != nil {
-		return nil, fmt.Errorf("error getting element type: %w", statusToError(status))
+		return nil, fmt.Errorf("Error getting tensor element type: %w",
+			statusToError(status))
 	}
 	C.ReleaseTensorTypeAndShapeInfo(pInfo)
 	var tensorData unsafe.Pointer
 	status = C.GetTensorMutableData(v, &tensorData)
 	if status != nil {
-		return nil, fmt.Errorf("error getting tensor mutable data: %w", statusToError(status))
+		return nil, fmt.Errorf("Error getting tensor mutable data: %w",
+			statusToError(status))
 	}
 
 	switch tensorType := TensorElementDataType(tensorElementType); tensorType {
@@ -1177,4 +1193,186 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
 		}
 	}
 	return nil
+}
+
+// Holds information about the name, shape, and type of an input or output to a
+// ONNX network.
+type InputOutputInfo struct {
+	// The name of the input or output
+	Name string
+	// The input or output's dimensions
+	Dimensions Shape
+	// The input or output's data type
+	DataType TensorElementDataType
+}
+
+func (n *InputOutputInfo) String() string {
+	return fmt.Sprintf("\"%s\": %s, %s", n.Name, n.Dimensions, n.DataType)
+}
+
+// Sets o.Dimensions and o.DataType from the contents of t.
+func (o *InputOutputInfo) fillFromTypeInfo(t *C.OrtTypeInfo) error {
+	// OrtTensorTypeAndShapeInfo pointers should *not* be released if they're
+	// obtained via CastTypeInfoToTensorInfo.
+	var typeAndShapeInfo *C.OrtTensorTypeAndShapeInfo
+	status := C.CastTypeInfoToTensorInfo(t, &typeAndShapeInfo)
+	if status != nil {
+		return fmt.Errorf("Error getting type and shape info: %w",
+			statusToError(status))
+	}
+	if typeAndShapeInfo == nil {
+		return fmt.Errorf("Didn't get type and shape info for an OrtTypeInfo" +
+			"(it may not be a tensor type?)")
+	}
+	var e error
+	o.Dimensions, e = getShapeFromInfo(typeAndShapeInfo)
+	if e != nil {
+		return fmt.Errorf("Error getting shape from typeAndShapeInfo: %w", e)
+	}
+	var tensorElementType C.ONNXTensorElementDataType
+	status = C.GetTensorElementType(typeAndShapeInfo,
+		(*uint32)(&tensorElementType))
+	if status != nil {
+		return fmt.Errorf("Error getting data type from typeAndShapeInfo: %w",
+			statusToError(status))
+	}
+	o.DataType = TensorElementDataType(tensorElementType)
+	return nil
+}
+
+// Fills dst with information about the session's i'th input.
+func getSessionInputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
+	var cName *C.char
+	status := C.SessionGetInputName(s, C.size_t(i), &cName)
+	if status != nil {
+		return fmt.Errorf("Error getting name: %w", statusToError(status))
+	}
+	dst.Name = C.GoString(cName)
+	// Unfortunately, it's too much work to force onnxruntime to use plain
+	// 'malloc' when allocating input or output names, so we need to free them
+	// with a different function.
+	status = C.FreeWithDefaultORTAllocator(unsafe.Pointer(cName))
+	if status != nil {
+		return fmt.Errorf("Error freeing C-memory name copy: %w",
+			statusToError(status))
+	}
+
+	// Session inputs are reported as OrtTypeInfo structs, though usually we
+	// want a tensor-specific OrtTensorTypeAndShapeInfo struct, which we can
+	// get from the type info.
+	var typeInfo *C.OrtTypeInfo
+	status = C.SessionGetInputTypeInfo(s, C.size_t(i), &typeInfo)
+	if status != nil {
+		return fmt.Errorf("Error getting type info: %w", statusToError(status))
+	}
+	defer C.ReleaseTypeInfo(typeInfo)
+	e := dst.fillFromTypeInfo(typeInfo)
+	if e != nil {
+		return e
+	}
+	return nil
+}
+
+// Fills dst with information about the session's i'th output.
+func getSessionOutputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
+	// This is basically identical to getSessionInputInfo.
+	var cName *C.char
+	status := C.SessionGetOutputName(s, C.size_t(i), &cName)
+	if status != nil {
+		return fmt.Errorf("Error getting name: %w", statusToError(status))
+	}
+	dst.Name = C.GoString(cName)
+	status = C.FreeWithDefaultORTAllocator(unsafe.Pointer(cName))
+	if status != nil {
+		return fmt.Errorf("Error freeing C-memory name copy: %w",
+			statusToError(status))
+	}
+	var typeInfo *C.OrtTypeInfo
+	status = C.SessionGetOutputTypeInfo(s, C.size_t(i), &typeInfo)
+	if status != nil {
+		return fmt.Errorf("Error getting type info: %w", statusToError(status))
+	}
+	defer C.ReleaseTypeInfo(typeInfo)
+	e := dst.fillFromTypeInfo(typeInfo)
+	if e != nil {
+		return e
+	}
+	return nil
+}
+
+// Takes a path to a .onnx file, and returns a list of inputs and a list of
+// outputs, respectively. Will open, read, and close the .onnx file to get the
+// information. InitializeEnvironment() must have been called prior to using
+// this function. Warning: this function requires loading the .onnx file into a
+// temporary onnxruntime session, which may be an expensive operation.
+//
+// For now, this may fail if the network has any non-tensor inputs or inputs
+// that don't have a concrete shape and type. In the future, a new API may be
+// added to support cases requiring more advanced usage of the C.OrtTypeInfo
+// struct.
+func GetInputOutputInfo(path string) ([]InputOutputInfo, []InputOutputInfo,
+	error) {
+	// We'll check for initialization in GetInputOutputInfoWithONNXData
+	fileContent, e := os.ReadFile(path)
+	if e != nil {
+		return nil, nil, fmt.Errorf("Error reading %s: %w", path, e)
+	}
+	inputs, outputs, e := GetInputOutputInfoWithONNXData(fileContent)
+	if e != nil {
+		return nil, nil, fmt.Errorf("Error getting inputs and outputs from "+
+			"%s: %w", path, e)
+	}
+	return inputs, outputs, nil
+}
+
+// Identical in behavior to GetInputOutputInfo, but takes a slice of bytes
+// containing the .onnx network rather than a file path.
+func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
+	[]InputOutputInfo, error) {
+	var e error
+	if !IsInitialized() {
+		return nil, nil, NotInitializedError
+	}
+
+	// Create the temporary ORT session from which we'll load the information.
+	var s *C.OrtSession
+	status := C.CreateSession(unsafe.Pointer(&(data[0])), C.size_t(len(data)),
+		ortEnv, &s, nil)
+	if status != nil {
+		return nil, nil, statusToError(status)
+	}
+	defer func() {
+		C.ReleaseOrtSession(s)
+	}()
+
+	// Allocate the structs to hold the results.
+	var inputCount, outputCount C.size_t
+	status = C.SessionGetInputCount(s, &inputCount)
+	if status != nil {
+		return nil, nil, statusToError(status)
+	}
+	inputs := make([]InputOutputInfo, inputCount)
+	status = C.SessionGetOutputCount(s, &outputCount)
+	if status != nil {
+		return nil, nil, statusToError(status)
+	}
+	outputs := make([]InputOutputInfo, outputCount)
+
+	// Get the results for each input and output.
+	for i := 0; i < int(inputCount); i++ {
+		e = getSessionInputInfo(s, i, &(inputs[i]))
+		if e != nil {
+			return nil, nil, fmt.Errorf("Error getting information about "+
+				"input %d: %w", i, e)
+		}
+	}
+	for i := 0; i < int(outputCount); i++ {
+		e = getSessionOutputInfo(s, i, &(outputs[i]))
+		if e != nil {
+			return nil, nil, fmt.Errorf("Error getting information about "+
+				"output %d: %w", i, e)
+		}
+	}
+
+	return inputs, outputs, nil
 }

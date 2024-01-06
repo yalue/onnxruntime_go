@@ -132,6 +132,12 @@ OrtStatus *RunOrtSession(OrtSession *session,
 // Wraps ort_api->ReleaseSession
 void ReleaseOrtSession(OrtSession *session);
 
+// Wraps ort_api->SessionGetInputCount.
+OrtStatus *SessionGetInputCount(OrtSession *session, size_t *result);
+
+// Wraps ort_api->SessionGetOutputCount.
+OrtStatus *SessionGetOutputCount(OrtSession *session, size_t *result);
+
 // Used to free OrtValue instances, such as tensors.
 void ReleaseOrtValue(OrtValue *value);
 
@@ -158,6 +164,34 @@ void ReleaseTensorTypeAndShapeInfo(OrtTensorTypeAndShapeInfo *input);
 
 // Wraps ort_api->GetTensorMutableData
 OrtStatus *GetTensorMutableData(OrtValue *value, void **out);
+
+// Wraps ort_api->SessionGetInputName, using the default allocator.
+OrtStatus *SessionGetInputName(OrtSession *session, size_t i, char **name);
+
+// Wraps ort_api->SessionGetOutputName, using the default allocator.
+OrtStatus *SessionGetOutputName(OrtSession *session, size_t i, char **name);
+
+// Frees anything that was allocated using the default ORT allocator.
+OrtStatus *FreeWithDefaultORTAllocator(void *to_free);
+
+// Wraps ort_api->SessionGetInputTypeInfo.
+OrtStatus *SessionGetInputTypeInfo(OrtSession *session, size_t i,
+  OrtTypeInfo **out);
+
+// Wraps ort_api->SessionGetOutputTypeInfo.
+OrtStatus *SessionGetOutputTypeInfo(OrtSession *session, size_t i,
+  OrtTypeInfo **out);
+
+// If the type_info is for a tensor, sets out to the a pointer to the tensor's
+// NameAndTypeInfo. Do _not_ free the out pointer; it will be freed when
+// type_info is released.
+//
+// Wraps ort_api->CastTypeInfoToTensorInfo.
+OrtStatus *CastTypeInfoToTensorInfo(OrtTypeInfo *type_info,
+  OrtTensorTypeAndShapeInfo **out);
+
+// Wraps ort_api->FreeTypeInfo.
+void ReleaseTypeInfo(OrtTypeInfo *o);
 
 #ifdef __cplusplus
 }  // extern "C"
