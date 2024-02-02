@@ -748,6 +748,130 @@ func TestGetInputOutputInfo(t *testing.T) {
 	}
 }
 
+func TestModelMetadata(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	file := "test_data/example_network.onnx"
+	metadata, e := GetModelMetadata(file)
+	if e != nil {
+		t.Logf("Error getting metadata for %s: %s\n", file, e)
+		t.FailNow()
+	}
+	// We'll just test Destroy once; after this we won't check its return value
+	e = metadata.Destroy()
+	if e != nil {
+		t.Logf("Error destroying metadata: %s\n", e)
+		t.FailNow()
+	}
+
+	// Try getting the metadata from a session instead of from a file.
+	// NOTE: All of the expected values here were manually set using the
+	// test_data/modify_metadata.py script after generating the network. See
+	// that script for the expected values of each of the metadata accesors.
+	file = "test_data/example_big_compute.onnx"
+	session, e := NewDynamicAdvancedSession(file, []string{"Input"},
+		[]string{"Output"}, nil)
+	if e != nil {
+		t.Logf("Error creating session: %s\n", e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	metadata, e = session.GetModelMetadata()
+	if e != nil {
+		t.Logf("Error getting metadata from DynamicAdvancedSession: %s\n", e)
+		t.FailNow()
+	}
+	defer metadata.Destroy()
+	producerName, e := metadata.GetProducerName()
+	if e != nil {
+		t.Logf("Error getting producer name: %s\n", e)
+		t.Fail()
+	} else {
+		t.Logf("Got producer name: %s\n", producerName)
+	}
+	graphName, e := metadata.GetGraphName()
+	if e != nil {
+		t.Logf("Error getting graph name: %s\n", e)
+		t.Fail()
+	} else {
+		t.Logf("Got graph name: %s\n", graphName)
+	}
+	domainStr, e := metadata.GetDomain()
+	if e != nil {
+		t.Logf("Error getting domain: %s\n", e)
+		t.Fail()
+	} else {
+		t.Logf("Got domain: %s\n", domainStr)
+		if domainStr != "test domain" {
+			t.Logf("Incorrect domain string, expected \"test domain\"\n")
+			t.Fail()
+		}
+	}
+	description, e := metadata.GetDescription()
+	if e != nil {
+		t.Logf("Error getting description: %s\n", e)
+		t.Fail()
+	} else {
+		t.Logf("Got description: %s\n", description)
+	}
+	version, e := metadata.GetVersion()
+	if e != nil {
+		t.Logf("Error getting version: %s\n", e)
+		t.Fail()
+	} else {
+		t.Logf("Got version: %d\n", version)
+		if version != 1337 {
+			t.Logf("Incorrect version number, expected 1337\n")
+			t.Fail()
+		}
+	}
+	mapKeys, e := metadata.GetCustomMetadataMapKeys()
+	if e != nil {
+		t.Logf("Error getting custom metadata keys: %s\n", e)
+		t.FailNow()
+	}
+	t.Logf("Got %d custom metadata map keys.\n", len(mapKeys))
+	if len(mapKeys) != 2 {
+		t.Logf("Incorrect number of custom metadata keys, expected 2")
+		t.Fail()
+	}
+	for _, k := range mapKeys {
+		value, present, e := metadata.LookupCustomMetadataMap(k)
+		if e != nil {
+			t.Logf("Error looking up key %s in custom metadata: %s\n", k, e)
+			t.Fail()
+		} else {
+			if !present {
+				t.Logf("LookupCustomMetadataMap didn't return true for a " +
+					"key that should be present in the map\n")
+				t.Fail()
+			}
+			t.Logf("  Metadata key \"%s\" = \"%s\"\n", k, value)
+		}
+	}
+	badValue, present, e := metadata.LookupCustomMetadataMap("invalid key")
+	if len(badValue) != 0 {
+		t.Logf("Didn't get an empty string when looking up an invalid "+
+			"metadata key, got \"%s\" instead\n", badValue)
+		t.FailNow()
+	}
+	if present {
+		t.Logf("LookupCustomMetadataMap didn't return false for a key that " +
+			"isn't in the map\n")
+		t.Fail()
+	}
+	// Tossing in this check, since the docs aren't clear on this topic. (The
+	// docs specify returning an empty string, but do not mention a non-NULL
+	// OrtStatus.) At the time of writing, it does _not_ return an error.
+	if e == nil {
+		t.Logf("Informational: looking up an invalid metadata key doesn't " +
+			"return an error\n")
+	} else {
+		t.Logf("Informational: got error when looking up an invalid "+
+			"metadata key: %s\n", e)
+	}
+}
+
 func randomBytes(seed, n int64) []byte {
 	toReturn := make([]byte, n)
 	rng := rand.New(rand.NewSource(seed))

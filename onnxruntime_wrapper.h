@@ -193,6 +193,37 @@ OrtStatus *CastTypeInfoToTensorInfo(OrtTypeInfo *type_info,
 // Wraps ort_api->FreeTypeInfo.
 void ReleaseTypeInfo(OrtTypeInfo *o);
 
+// Wraps ort_spi->SessionGetModelMetadata.
+OrtStatus *SessionGetModelMetadata(OrtSession *s, OrtModelMetadata **out);
+
+// Wraps ort_api->ReleaseModelMetadata.
+void ReleaseModelMetadata(OrtModelMetadata *m);
+
+// Wraps ort_api->ModelMetadataGetProducerName, using the default allocator.
+OrtStatus *ModelMetadataGetProducerName(OrtModelMetadata *m, char **name);
+
+// Wraps ort_api->ModelMetadataGetGraphName, using the default allocator.
+OrtStatus *ModelMetadataGetGraphName(OrtModelMetadata *m, char **name);
+
+// Wraps ort_api->ModelMetadataGetDomain, using the default allocator.
+OrtStatus *ModelMetadataGetDomain(OrtModelMetadata *m, char **domain);
+
+// Wraps ort_api->ModelMetadataGetDescription, using the default allocator.
+OrtStatus *ModelMetadataGetDescription(OrtModelMetadata *m, char **desc);
+
+// Wraps ort_api->ModelMetadataLookupCustomMetadataMap, using the default
+// allocator.
+OrtStatus *ModelMetadataLookupCustomMetadataMap(OrtModelMetadata *m, char *key,
+  char **value);
+
+// Wraps ort_api->ModelMetadataGetCustomMetadataMapKeys, using the default
+// allocator.
+OrtStatus *ModelMetadataGetCustomMetadataMapKeys(OrtModelMetadata *m,
+  char ***keys, int64_t *num_keys);
+
+// Wraps ort_api->ModelMetadataGetVersion.
+OrtStatus *ModelMetadataGetVersion(OrtModelMetadata *m, int64_t *version);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
