@@ -863,6 +863,178 @@ func NewSessionOptions() (*SessionOptions, error) {
 	}, nil
 }
 
+// A wrapper around the OrtModelMetadata C struct. Must be freed by calling
+// Destroy() on it when it's no longer needed.
+type ModelMetadata struct {
+	m *C.OrtModelMetadata
+}
+
+// Frees internal state required by the model metadata. Users are responsible
+// for calling this on any ModelMetadata instance after it's no longer needed.
+func (m *ModelMetadata) Destroy() error {
+	if m.m != nil {
+		C.ReleaseModelMetadata(m.m)
+		m.m = nil
+	}
+	return nil
+}
+
+// Takes a C string allocated using the default ORT allocator, converts it to
+// a Go string, and frees the C copy. Returns an error if one occurs. Returns
+// an empty string with no error if s is nil. Obviously, s is invalid after
+// this returns.
+func convertORTString(s *C.char) (string, error) {
+	if s == nil {
+		return "", nil
+	}
+	// Unfortunately, onnxruntime wants to use custom allocators to allocate
+	// data such as strings, which are rather obtuse to customize. Therefore,
+	// our C code always specifies the default ORT allocator when possible. We
+	// move any strings ORT allocates into Go strings so we can free the C
+	// versions as soon as possible.
+	toReturn := C.GoString(s)
+	status := C.FreeWithDefaultORTAllocator(unsafe.Pointer(s))
+	if status != nil {
+		return toReturn, statusToError(status)
+	}
+	return toReturn, nil
+}
+
+// Returns the producer name associated with the model metadata, or an error if
+// the name can't be obtained.
+func (m *ModelMetadata) GetProducerName() (string, error) {
+	var cName *C.char
+	status := C.ModelMetadataGetProducerName(m.m, &cName)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return convertORTString(cName)
+}
+
+// Returns the graph name associated with the model metadata, or an error if
+// the name can't be obtained.
+func (m *ModelMetadata) GetGraphName() (string, error) {
+	var cName *C.char
+	status := C.ModelMetadataGetGraphName(m.m, &cName)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return convertORTString(cName)
+}
+
+// Returns the domain associated with the model metadata, or an error if the
+// domain can't be obtained.
+func (m *ModelMetadata) GetDomain() (string, error) {
+	var cDomain *C.char
+	status := C.ModelMetadataGetDomain(m.m, &cDomain)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return convertORTString(cDomain)
+}
+
+// Returns the description associated with the model metadata, or an error if
+// the description can't be obtained.
+func (m *ModelMetadata) GetDescription() (string, error) {
+	var cDescription *C.char
+	status := C.ModelMetadataGetDescription(m.m, &cDescription)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return convertORTString(cDescription)
+}
+
+// Returns the version number in the model metadata, or an error if one occurs.
+func (m *ModelMetadata) GetVersion() (int64, error) {
+	var version C.int64_t
+	status := C.ModelMetadataGetVersion(m.m, &version)
+	if status != nil {
+		return 0, statusToError(status)
+	}
+	return int64(version), nil
+}
+
+// Looks up and returns the string associated with the given key in the custom
+// metadata map. Returns a blank string and 'false' if the key isn't in the
+// map. (A key that's in the map but set to a blank string will
+// return "" and true instead.)
+//
+// NOTE: It is unclear from the onnxruntime documentation for this function
+// whether an error will be returned if the key isn't present. At the time of
+// writing (1.16.1) the docs only state that no value is returned, not whether
+// an error occurs.
+func (m *ModelMetadata) LookupCustomMetadataMap(key string) (string, bool, error) {
+	var cValue *C.char
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	status := C.ModelMetadataLookupCustomMetadataMap(m.m, cKey, &cValue)
+	if status != nil {
+		return "", false, statusToError(status)
+	}
+	if cValue == nil {
+		return "", false, nil
+	}
+	value, e := convertORTString(cValue)
+	return value, true, e
+}
+
+// Returns a list of keys that are present in the custom metadata map. Returns
+// an empty slice or nil if no keys are in the map.
+//
+// NOTE: It is unclear from the docs whether an empty custom metadata map will
+// cause the underlying C function to return an error along with a NULL list,
+// or whether it will only return a NULL list with no error.
+func (m *ModelMetadata) GetCustomMetadataMapKeys() ([]string, error) {
+	var keyCount C.int64_t
+	var cKeys **C.char
+	status := C.ModelMetadataGetCustomMetadataMapKeys(m.m, &cKeys, &keyCount)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	if cKeys == nil {
+		// We got no keys in the map and no error return
+		return nil, nil
+	}
+	if keyCount == 0 {
+		// We have a non-NULL but empty list of C pointers, so we'll still
+		// free it here.
+		status := C.FreeWithDefaultORTAllocator(unsafe.Pointer(cKeys))
+		if status != nil {
+			return nil, statusToError(status)
+		}
+		return nil, nil
+	}
+
+	// The slice allows us to index into the array of C-string pointers.
+	cKeySlice := unsafe.Slice(cKeys, int64(keyCount))
+	toReturn := make([]string, len(cKeySlice))
+	var e error
+	for i, s := range cKeySlice {
+		// We won't check for errors until after the loop, because we want to
+		// continue trying to free all of the strings regardless of whether an
+		// error occurs for one of them.
+		toReturn[i], e = convertORTString(s)
+		cKeySlice[i] = nil
+	}
+	// At this point, we've done our best to convert and free all of the ORT-
+	// allocated C strings, but we still need to free the array itself, which
+	// we attempt regardless of whether an error occurred during the string
+	// processing.
+	status = C.FreeWithDefaultORTAllocator(unsafe.Pointer(cKeys))
+	cKeySlice = nil
+	cKeys = nil
+	if e != nil {
+		return nil, fmt.Errorf("Error copying one or more C strings to Go: %w",
+			e)
+	}
+	if status != nil {
+		return nil, fmt.Errorf("Error freeing array of C strings: %w",
+			statusToError(status))
+	}
+
+	return toReturn, nil
+}
+
 // A wrapper around the OrtSession C struct. Requires the user to maintain all
 // input and output tensors, and to use the same data type for input and output
 // tensors. Created using NewAdvancedSession(...) or
@@ -1009,6 +1181,20 @@ func (s *AdvancedSession) Run() error {
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
 	return nil
+}
+
+// Creates and returns a ModelMetadata instance for this session's model. The
+// returned metadata must be freed using its Destroy() function when no longer
+// needed.
+func (s *AdvancedSession) GetModelMetadata() (*ModelMetadata, error) {
+	var m *C.OrtModelMetadata
+	status := C.SessionGetModelMetadata(s.ortSession, &m)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &ModelMetadata{
+		m: m,
+	}, nil
 }
 
 // This type of session does not require specifying input and output tensors
@@ -1195,6 +1381,13 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
 	return nil
 }
 
+// Creates and returns a ModelMetadata instance for this session's model. The
+// returned metadata must be freed using its Destroy() function when no longer
+// needed.
+func (s *DynamicAdvancedSession) GetModelMetadata() (*ModelMetadata, error) {
+	return s.s.GetModelMetadata()
+}
+
 // Holds information about the name, shape, and type of an input or output to a
 // ONNX network.
 type InputOutputInfo struct {
@@ -1243,18 +1436,14 @@ func (o *InputOutputInfo) fillFromTypeInfo(t *C.OrtTypeInfo) error {
 // Fills dst with information about the session's i'th input.
 func getSessionInputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
 	var cName *C.char
+	var e error
 	status := C.SessionGetInputName(s, C.size_t(i), &cName)
 	if status != nil {
 		return fmt.Errorf("Error getting name: %w", statusToError(status))
 	}
-	dst.Name = C.GoString(cName)
-	// Unfortunately, it's too much work to force onnxruntime to use plain
-	// 'malloc' when allocating input or output names, so we need to free them
-	// with a different function.
-	status = C.FreeWithDefaultORTAllocator(unsafe.Pointer(cName))
-	if status != nil {
-		return fmt.Errorf("Error freeing C-memory name copy: %w",
-			statusToError(status))
+	dst.Name, e = convertORTString(cName)
+	if e != nil {
+		return fmt.Errorf("Error converting C name to Go string: %w", e)
 	}
 
 	// Session inputs are reported as OrtTypeInfo structs, though usually we
@@ -1266,7 +1455,7 @@ func getSessionInputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
 		return fmt.Errorf("Error getting type info: %w", statusToError(status))
 	}
 	defer C.ReleaseTypeInfo(typeInfo)
-	e := dst.fillFromTypeInfo(typeInfo)
+	e = dst.fillFromTypeInfo(typeInfo)
 	if e != nil {
 		return e
 	}
@@ -1277,15 +1466,14 @@ func getSessionInputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
 func getSessionOutputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
 	// This is basically identical to getSessionInputInfo.
 	var cName *C.char
+	var e error
 	status := C.SessionGetOutputName(s, C.size_t(i), &cName)
 	if status != nil {
 		return fmt.Errorf("Error getting name: %w", statusToError(status))
 	}
-	dst.Name = C.GoString(cName)
-	status = C.FreeWithDefaultORTAllocator(unsafe.Pointer(cName))
-	if status != nil {
-		return fmt.Errorf("Error freeing C-memory name copy: %w",
-			statusToError(status))
+	dst.Name, e = convertORTString(cName)
+	if e != nil {
+		return fmt.Errorf("Error converting C name to Go string: %w", e)
 	}
 	var typeInfo *C.OrtTypeInfo
 	status = C.SessionGetOutputTypeInfo(s, C.size_t(i), &typeInfo)
@@ -1293,7 +1481,7 @@ func getSessionOutputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
 		return fmt.Errorf("Error getting type info: %w", statusToError(status))
 	}
 	defer C.ReleaseTypeInfo(typeInfo)
-	e := dst.fillFromTypeInfo(typeInfo)
+	e = dst.fillFromTypeInfo(typeInfo)
 	if e != nil {
 		return e
 	}
@@ -1341,9 +1529,7 @@ func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
 	if status != nil {
 		return nil, nil, statusToError(status)
 	}
-	defer func() {
-		C.ReleaseOrtSession(s)
-	}()
+	defer C.ReleaseOrtSession(s)
 
 	// Allocate the structs to hold the results.
 	var inputCount, outputCount C.size_t
@@ -1375,4 +1561,43 @@ func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
 	}
 
 	return inputs, outputs, nil
+}
+
+// Takes a path to a .onnx file and returns the ModelMetadata associated with
+// it. The returned metadata must be freed using its Destroy() function when
+// it's no longer needed. InitializeEnvironment() must be called before using
+// this function.
+//
+// Warning: This function loads the onnx content into a temporary onnxruntime
+// session, so it may be computationally expensive.
+func GetModelMetadata(path string) (*ModelMetadata, error) {
+	fileContent, e := os.ReadFile(path)
+	if e != nil {
+		return nil, fmt.Errorf("Error reading %s: %w", path, e)
+	}
+	return GetModelMetadataWithONNXData(fileContent)
+}
+
+// Identical in behavior to GetModelMetadata, but takes a slice of bytes
+// containing the .onnx network rather than a file path.
+func GetModelMetadataWithONNXData(data []byte) (*ModelMetadata, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	// Create the temporary ORT session from which we'll get the metadata.
+	var s *C.OrtSession
+	status := C.CreateSession(unsafe.Pointer(&(data[0])), C.size_t(len(data)),
+		ortEnv, &s, nil)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	defer C.ReleaseOrtSession(s)
+	var m *C.OrtModelMetadata
+	status = C.SessionGetModelMetadata(s, &m)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &ModelMetadata{
+		m: m,
+	}, nil
 }

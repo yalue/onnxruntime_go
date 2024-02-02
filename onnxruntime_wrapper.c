@@ -282,3 +282,67 @@ OrtStatus *CastTypeInfoToTensorInfo(OrtTypeInfo *type_info,
   return ort_api->CastTypeInfoToTensorInfo(type_info,
     (const OrtTensorTypeAndShapeInfo **) out);
 }
+
+OrtStatus *SessionGetModelMetadata(OrtSession *s, OrtModelMetadata **m) {
+  return ort_api->SessionGetModelMetadata(s, m);
+}
+
+void ReleaseModelMetadata(OrtModelMetadata *m) {
+  return ort_api->ReleaseModelMetadata(m);
+}
+
+OrtStatus *ModelMetadataGetProducerName(OrtModelMetadata *m, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->ModelMetadataGetProducerName(m, allocator, name);
+}
+
+OrtStatus *ModelMetadataGetGraphName(OrtModelMetadata *m, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->ModelMetadataGetGraphName(m, allocator, name);
+}
+
+OrtStatus *ModelMetadataGetDomain(OrtModelMetadata *m, char **domain) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->ModelMetadataGetDomain(m, allocator, domain);
+}
+
+OrtStatus *ModelMetadataGetDescription(OrtModelMetadata *m, char **desc) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->ModelMetadataGetDescription(m, allocator, desc);
+}
+
+OrtStatus *ModelMetadataLookupCustomMetadataMap(OrtModelMetadata *m, char *key,
+  char **value) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->ModelMetadataLookupCustomMetadataMap(m, allocator, key,
+    value);
+}
+
+OrtStatus *ModelMetadataGetCustomMetadataMapKeys(OrtModelMetadata *m,
+  char ***keys, int64_t *num_keys) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->ModelMetadataGetCustomMetadataMapKeys(m, allocator, keys,
+    num_keys);
+}
+
+OrtStatus *ModelMetadataGetVersion(OrtModelMetadata *m, int64_t *version) {
+  return ort_api->ModelMetadataGetVersion(m, version);
+}
