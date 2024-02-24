@@ -94,8 +94,10 @@ func floatsEqual(a, b []float32) error {
 		if diff < 0 {
 			diff = -diff
 		}
-		// Arbitrarily chosen precision.
-		if diff >= 0.00000001 {
+		// Arbitrarily chosen precision. (Unfortunately, going higher than this
+		// may cause test failures, since the Sum operator doesn't have the
+		// same results as doing sums purely in Go.)
+		if diff >= 0.000001 {
 			return fmt.Errorf("Data element %d doesn't match: %f vs %v",
 				i, a[i], b[i])
 		}
@@ -610,7 +612,103 @@ func TestDynamicAllocatedOutputTensor(t *testing.T) {
 	} else {
 		verifyTensorData(t, outputB, expectedB)
 	}
+}
 
+// Makes sure that the sum of each vector in the input tensor matches the
+// corresponding scalar in the output tensor. Used when testing tensors with
+// unknown batch dimensions.
+// NOTE: Destroys the input and output tensors before returning, regardless of
+// test success.
+func checkVectorSum(input *Tensor[float32], output *Tensor[float32],
+	t testing.TB) {
+	defer input.Destroy()
+	defer output.Destroy()
+	// Make sure the sizes are what we expect.
+	inputShape := input.GetShape()
+	outputShape := output.GetShape()
+	if len(inputShape) != 2 {
+		t.Logf("Expected a 2-dimensional input shape, got %v\n", inputShape)
+		t.FailNow()
+	}
+	if len(outputShape) != 1 {
+		t.Logf("Expected 1-dimensional output shape, got %v\n", outputShape)
+		t.FailNow()
+	}
+	if inputShape[0] != outputShape[0] {
+		t.Logf("Input and output batch dimensions don't match (%d vs %d)\n",
+			inputShape[0], outputShape[0])
+		t.FailNow()
+	}
+
+	// Compute the sums in Go
+	batchSize := inputShape[0]
+	vectorLength := inputShape[1]
+	expectedSums := make([]float32, batchSize)
+	for i := int64(0); i < batchSize; i++ {
+		inputVector := input.GetData()[i*vectorLength : (i+1)*vectorLength]
+		sum := float32(0.0)
+		for _, v := range inputVector {
+			sum += v
+		}
+		expectedSums[i] = sum
+	}
+
+	e := floatsEqual(expectedSums, output.GetData())
+	if e != nil {
+		t.Logf("ONNX-produced sums don't match CPU-produced sums: %s\n", e)
+		t.FailNow()
+	}
+}
+
+func TestDynamicInputOutputAxes(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	netPath := "test_data/example_dynamic_axes.onnx"
+	session, e := NewDynamicAdvancedSession(netPath,
+		[]string{"input_vectors"}, []string{"output_scalars"}, nil)
+	if e != nil {
+		t.Logf("Error loading %s: %s\n", netPath, e)
+		t.FailNow()
+	}
+	defer session.Destroy()
+	rng := rand.New(rand.NewSource(1234))
+	maxBatchSize := 99
+	// The example network takes a dynamic batch size of vectors containing 10
+	// elements each.
+	dataBuffer := make([]float32, maxBatchSize*10)
+
+	// Try running the session with many different batch sizes
+	for i := 11; i <= maxBatchSize; i += 11 {
+		// Create an input with the new batch size.
+		inputShape := NewShape(int64(i), 10)
+		input, e := NewTensor(inputShape, dataBuffer)
+		if e != nil {
+			t.Logf("Error creating input tensor with shape %v: %s\n",
+				inputShape, e)
+			t.FailNow()
+		}
+
+		// Populate the input with new random floats.
+		inputData := input.GetData()
+		for i := range inputData {
+			inputData[i] = rng.Float32()
+		}
+
+		// Run the session; make onnxruntime allocate the output tensor for us.
+		outputs := []ArbitraryTensor{nil}
+		e = session.Run([]ArbitraryTensor{input}, outputs)
+		if e != nil {
+			input.Destroy()
+			t.Logf("Error running the session with batch size %d: %s\n", i, e)
+			t.FailNow()
+		}
+
+		// The checkVectorSum function will destroy the input and output tensor
+		// regardless of their correctness.
+		checkVectorSum(input, outputs[0].(*Tensor[float32]), t)
+		t.Logf("Batch size %d seems OK!\n", i)
+	}
 }
 
 func TestWrongInputs(t *testing.T) {
