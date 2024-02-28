@@ -404,9 +404,9 @@ const (
 	TensorElementDataTypeUint32    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32
 	TensorElementDataTypeUint64    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64
 
-	// Not supported by onnxruntime (as of onnxruntime version 1.16.1)
+	// Not supported by onnxruntime (as of onnxruntime version 1.17.1)
 	TensorElementDataTypeComplex64 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64
-	// Not supported by onnxruntime (as of onnxruntime version 1.16.1)
+	// Not supported by onnxruntime (as of onnxruntime version 1.17.1)
 	TensorElementDataTypeComplex128 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128
 
 	// Non-IEEE floating-point format based on IEEE754 single-precision
@@ -961,7 +961,7 @@ func (m *ModelMetadata) GetVersion() (int64, error) {
 //
 // NOTE: It is unclear from the onnxruntime documentation for this function
 // whether an error will be returned if the key isn't present. At the time of
-// writing (1.16.1) the docs only state that no value is returned, not whether
+// writing (1.17.1) the docs only state that no value is returned, not whether
 // an error occurs.
 func (m *ModelMetadata) LookupCustomMetadataMap(key string) (string, bool, error) {
 	var cValue *C.char
