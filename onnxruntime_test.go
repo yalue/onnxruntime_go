@@ -1425,9 +1425,43 @@ func TestDirectMLSession(t *testing.T) {
 }
 
 func BenchmarkDirectMLSession(b *testing.B) {
+	b.StopTimer()
 	InitializeRuntime(b)
 	defer CleanupRuntime(b)
 	sessionOptions := getDirectMLSessionOptions(b)
+	defer sessionOptions.Destroy()
+	benchmarkBigSessionWithOptions(b, sessionOptions)
+}
+
+func getOpenVINOSessionOptions(t testing.TB) *SessionOptions {
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Logf("Error creating session options: %s\n", e)
+		t.FailNow()
+	}
+	e = options.AppendExecutionProviderOpenVINO(map[string]string{})
+	if e != nil {
+		options.Destroy()
+		t.Skipf("Couldn't enable OpenVINO: %s. This may be due to your "+
+			"system or onnxruntime library version not supporting OpenVINO.\n",
+			e)
+	}
+	return options
+}
+
+func TestOpenVINOSession(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getOpenVINOSessionOptions(t)
+	defer sessionOptions.Destroy()
+	testBigSessionWithOptions(t, sessionOptions)
+}
+
+func BenchmarkOpenVINOSession(b *testing.B) {
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	sessionOptions := getOpenVINOSessionOptions(b)
 	defer sessionOptions.Destroy()
 	benchmarkBigSessionWithOptions(b, sessionOptions)
 }

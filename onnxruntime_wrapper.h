@@ -118,6 +118,10 @@ OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
 OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,
   int device_id);
 
+// Wraps ort_api->AppendExecutionProvider_OpenVINO_V2
+OrtStatus *AppendExecutionProviderOpenVINOV2(OrtSessionOptions *o,
+  const char **keys, const char **values, int num_keys);
+
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,

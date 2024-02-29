@@ -846,6 +846,33 @@ func (o *SessionOptions) AppendExecutionProviderDirectML(deviceID int) error {
 	return nil
 }
 
+// Enables the OpenVINO backend for the given session options on supported
+// platforms. See
+// https://onnxruntime.ai/docs/execution-providers/OpenVINO-ExecutionProvider.html#summary-of-options
+// for a list of supported keys and values that can be passed in the options
+// map.
+func (o *SessionOptions) AppendExecutionProviderOpenVINO(
+	options map[string]string) error {
+	// There's probably a more concise way to do this, but we don't want to
+	// do "&(keys[0])" if keys is an empty slice, so we'll declare the null
+	// ptrs ahead of time and only set them if we know the slices aren't empty.
+	var keysPtr, valuesPtr **C.char
+	if len(options) != 0 {
+		keys, values := mapToCStrings(options)
+		defer freeCStrings(keys)
+		defer freeCStrings(values)
+		keysPtr = &(keys[0])
+		valuesPtr = &(values[0])
+	}
+
+	status := C.AppendExecutionProviderOpenVINOV2(o.o, keysPtr, valuesPtr,
+		C.int(len(options)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.
