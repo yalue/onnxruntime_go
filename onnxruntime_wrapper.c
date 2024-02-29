@@ -161,6 +161,12 @@ OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,
   return status;
 }
 
+OrtStatus *AppendExecutionProviderOpenVINOV2(OrtSessionOptions *o,
+  const char **keys, const char **values, int num_keys) {
+  return ort_api->SessionOptionsAppendExecutionProvider_OpenVINO_V2(o, keys,
+    values, num_keys);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
     OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
