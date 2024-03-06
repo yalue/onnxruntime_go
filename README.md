@@ -183,9 +183,10 @@ a couple reasons.  In particular:
     accelerated execution providers, so CUDA-related tests will always be
     skipped if you use the default libraries in this repo.
 
- 2. Many systems, including AMD64 and i386 Linux, and ARM64 or x86 osx, do not
-    have shared libraries included in `test_data/` in the first place. (At
-    least for now.)
+ 2. Many systems, including AMD64 and i386 Linux, and x86 osx, do not currently
+    have shared libraries included in `test_data/` in the first place. (I would
+    like to keep this directory, and the overall repo, smaller by keeping the
+    number of shared libraries small.)
 
 If these or other reasons apply to you, the test code will check the
 `ONNXRUNTIME_SHARED_LIBRARY_PATH` environment variable before attempting to
