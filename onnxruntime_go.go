@@ -358,7 +358,7 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 	elementCount := s.FlattenedSize()
 	if elementCount > int64(len(data)) {
 		return nil, fmt.Errorf("The tensor's shape (%s) requires %d "+
-			"elements, but only %d were provided\n", s, elementCount,
+			"elements, but only %d were provided", s, elementCount,
 			len(data))
 	}
 	var ortValue *C.OrtValue
