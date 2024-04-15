@@ -1550,17 +1550,15 @@ func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
 	}
 
 	// Create the temporary ORT session from which we'll load the information.
-	var s *C.OrtSession
-	status := C.CreateSession(unsafe.Pointer(&(data[0])), C.size_t(len(data)),
-		ortEnv, &s, nil)
-	if status != nil {
-		return nil, nil, statusToError(status)
+	s, e := createCSession(data, nil)
+	if e != nil {
+		return nil, nil, fmt.Errorf("Error creating temporary session: %w", e)
 	}
 	defer C.ReleaseOrtSession(s)
 
 	// Allocate the structs to hold the results.
 	var inputCount, outputCount C.size_t
-	status = C.SessionGetInputCount(s, &inputCount)
+	status := C.SessionGetInputCount(s, &inputCount)
 	if status != nil {
 		return nil, nil, statusToError(status)
 	}
@@ -1612,15 +1610,13 @@ func GetModelMetadataWithONNXData(data []byte) (*ModelMetadata, error) {
 		return nil, NotInitializedError
 	}
 	// Create the temporary ORT session from which we'll get the metadata.
-	var s *C.OrtSession
-	status := C.CreateSession(unsafe.Pointer(&(data[0])), C.size_t(len(data)),
-		ortEnv, &s, nil)
-	if status != nil {
-		return nil, statusToError(status)
+	s, e := createCSession(data, nil)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating temporary session: %w", e)
 	}
 	defer C.ReleaseOrtSession(s)
 	var m *C.OrtModelMetadata
-	status = C.SessionGetModelMetadata(s, &m)
+	status := C.SessionGetModelMetadata(s, &m)
 	if status != nil {
 		return nil, statusToError(status)
 	}
