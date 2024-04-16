@@ -308,6 +308,51 @@ func TestZeroTensorContents(t *testing.T) {
 	}
 }
 
+// This test makes sure that functions taking .onnx data don't crash when
+// passed an empty slice. (This used to be a bug.)
+func TestEmptyONNXFiles(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	inputNames := []string{"whatever"}
+	outputNames := []string{"whatever_out"}
+	inputTensors := []ArbitraryTensor{nil}
+	outputTensors := []ArbitraryTensor{nil}
+	_, e := NewAdvancedSessionWithONNXData([]byte{}, inputNames, outputNames,
+		inputTensors, outputTensors, nil)
+	if e == nil {
+		// Really we're checking for a panic due to the empty slice, rather
+		// than a nil error.
+		t.Logf("Didn't get expected error when creating session.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error creating session with no ONNX content: %s\n", e)
+	_, e = NewDynamicAdvancedSessionWithONNXData([]byte{}, inputNames,
+		outputNames, nil)
+	if e == nil {
+		t.Logf("Didn't get expected error when creating dynamic advanced " +
+			"session.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when creating dynamic session with no ONNX "+
+		"content: %s\n", e)
+	_, _, e = GetInputOutputInfoWithONNXData([]byte{})
+	if e == nil {
+		t.Logf("Didn't get expected error when getting input/output info " +
+			"with no ONNX content.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when getting input/output info with no "+
+		"ONNX content: %s\n", e)
+	_, e = GetModelMetadataWithONNXData([]byte{})
+	if e == nil {
+		t.Logf("Didn't get expected error when getting metadata with no " +
+			"ONNX content.\n")
+		t.FailNow()
+	}
+	t.Logf("Got expected error when getting metadata with no ONNX "+
+		"content: %s\n", e)
+}
+
 func TestExampleNetwork(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
