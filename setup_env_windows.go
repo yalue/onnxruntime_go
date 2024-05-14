@@ -53,6 +53,11 @@ func platformInitializeEnvironment() error {
 		syscall.FreeLibrary(handle)
 		return fmt.Errorf("Error setting ORT API base: %d", tmp)
 	}
+
+	// we do not initialize the training API on windows (see setup_env.go)
+	// because currently we cannot support the conversion from UTF-8 to wide
+	// character. See https://github.com/yalue/onnxruntime_go/pull/56.
+
 	libraryHandle = handle
 	return nil
 }
