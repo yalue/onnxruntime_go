@@ -352,3 +352,149 @@ OrtStatus *ModelMetadataGetCustomMetadataMapKeys(OrtModelMetadata *m,
 OrtStatus *ModelMetadataGetVersion(OrtModelMetadata *m, int64_t *version) {
   return ort_api->ModelMetadataGetVersion(m, version);
 }
+
+// TRAINING API WRAPPER
+
+static const OrtTrainingApi *ort_training_api = NULL;
+
+void SetTrainingApi() {
+  ort_training_api = ort_api->GetTrainingApi(ORT_API_VERSION);
+}
+
+int IsTrainingApiSupported() {
+  if (ort_training_api == NULL) {
+    return 0;
+  }
+  return 1;
+}
+
+OrtStatus *CreateCheckpoint(void *checkpoint_data, size_t checkpoint_data_length, OrtCheckpointState **out) {
+  OrtStatus *status = NULL;
+  status = ort_training_api->LoadCheckpointFromBuffer(checkpoint_data, checkpoint_data_length, out);
+  return status;
+}
+
+OrtStatus *CreateTrainingSessionFromBuffer(OrtCheckpointState *checkpoint_state,
+    void *training_model_data, size_t training_model_data_length,
+    void *eval_model_data, size_t eval_model_data_length,
+    void *optim_model_data, size_t optim_model_data_length,
+    OrtEnv *env, OrtTrainingSession **out, OrtSessionOptions *options) {
+  OrtStatus *status = NULL;
+  int default_options = 0;
+  if (!options) {
+    default_options = 1;
+    status = ort_api->CreateSessionOptions(&options);
+    if (status) return status;
+  }
+  status = ort_training_api->CreateTrainingSessionFromBuffer(env, options, checkpoint_state,
+  training_model_data, training_model_data_length, eval_model_data, eval_model_data_length,
+  optim_model_data, optim_model_data_length, out);
+  if (default_options) {
+    ort_api->ReleaseSessionOptions(options);
+  }
+  return status;
+}
+
+OrtStatus *CreateTrainingSessionFromPaths(OrtCheckpointState *checkpoint_state,
+    char *training_model_path, char *eval_model_path, char *optim_model_path, 
+    OrtEnv *env, OrtTrainingSession **out, OrtSessionOptions *options) {
+  OrtStatus *status = NULL;
+  int default_options = 0;
+  if (!options) {
+    default_options = 1;
+    status = ort_api->CreateSessionOptions(&options);
+    if (status) return status;
+  }
+  status = ort_training_api->CreateTrainingSession(env, options, checkpoint_state,
+  training_model_path, eval_model_path, optim_model_path, out);
+  if (default_options) {
+    ort_api->ReleaseSessionOptions(options);
+  }
+  return status;
+}
+
+OrtStatus *TrainingSessionGetInputCount(OrtTrainingSession *training_session, size_t *result_training, size_t *result_eval) {
+  OrtStatus *status = NULL;
+  status = ort_training_api->TrainingSessionGetTrainingModelInputCount(training_session, result_training);
+  if (status) return status;
+  status = ort_training_api->TrainingSessionGetEvalModelInputCount(training_session, result_eval);
+  return status;
+}
+
+OrtStatus *TrainingSessionGetOutputCount(OrtTrainingSession *training_session, size_t *result_training, size_t *result_eval) {
+  OrtStatus *status = NULL;
+  status = ort_training_api->TrainingSessionGetTrainingModelOutputCount(training_session, result_training);
+  if (status) return status;
+  status = ort_training_api->TrainingSessionGetEvalModelOutputCount(training_session, result_eval);
+  return status;
+}
+
+OrtStatus *TrainingSessionGetTrainingInputName(OrtTrainingSession *training_session, size_t i, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_training_api->TrainingSessionGetTrainingModelInputName(training_session, i, allocator, name);
+}
+
+OrtStatus *TrainingSessionGetTrainingOutputName(OrtTrainingSession *training_session, size_t i, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_training_api->TrainingSessionGetTrainingModelOutputName(training_session, i, allocator, name);
+}
+
+OrtStatus *TrainingSessionGetEvalInputName(OrtTrainingSession *training_session, size_t i, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_training_api->TrainingSessionGetEvalModelInputName(training_session, i, allocator, name);
+}
+
+OrtStatus *TrainingSessionGetEvalOutputName(OrtTrainingSession *training_session, size_t i, char **name) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_training_api->TrainingSessionGetEvalModelOutputName(training_session, i, allocator, name);
+}
+
+OrtStatus *TrainStep(OrtTrainingSession *training_session, size_t inputs_len, OrtValue **inputs, size_t output_len, OrtValue **outputs) {
+    OrtStatus *status = NULL;
+    status = ort_training_api->TrainStep(training_session, NULL, inputs_len, (const OrtValue* const*) inputs, output_len, outputs);
+    return status;
+}
+
+OrtStatus *OptimizerStep(OrtTrainingSession *training_session) {
+    OrtStatus *status = NULL;
+    status = ort_training_api->OptimizerStep(training_session, NULL);
+    return status;
+}
+
+OrtStatus *LazyResetGrad(OrtTrainingSession *training_session) {
+    OrtStatus *status = NULL;
+    status = ort_training_api->LazyResetGrad(training_session);
+    return status;
+}
+
+OrtStatus *SaveCheckpoint(OrtCheckpointState *checkpoint, char *path, size_t include_optimizer) {
+  OrtStatus *status = NULL;
+  status = ort_training_api->SaveCheckpoint(checkpoint, path, include_optimizer);
+  return status;
+}
+
+OrtStatus *ExportModel(OrtTrainingSession *training_session, char *path, size_t outputs_len, char **output_names) {
+    OrtStatus *status = NULL;
+    status = ort_training_api->ExportModelForInferencing(training_session, path, outputs_len, (const char* const*) output_names);
+    return status;
+}
+
+void ReleaseOrtTrainingSession(OrtTrainingSession *session) {
+  ort_training_api->ReleaseTrainingSession(session);
+}
+
+void ReleaseCheckpointState(OrtCheckpointState *checkpoint) {
+  ort_training_api->ReleaseCheckpointState(checkpoint);
+}
