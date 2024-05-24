@@ -30,8 +30,8 @@ multiple Tensor data types; see the `NewTensor` or `NewEmptyTensor` functions.
 Note on onnxruntime Library Versions
 ------------------------------------
 
-At the time of writing, this library uses version 1.17.1 of the onnxruntime
-C API headers.  So, it will probably only work with version 1.17.1 of the
+At the time of writing, this library uses version 1.18.0 of the onnxruntime
+C API headers.  So, it will probably only work with version 1.18.0 of the
 onnxruntime shared libraries, as well.  If you need to use a different version,
 or if I get behind on updating this repository, updating or changing the
 onnxruntime version should be fairly easy:
@@ -55,7 +55,7 @@ download from the releases page in the
 for the release you want to use, and extract it. The header file is located in
 the "include" subdirectory, and the shared library will be located in the "lib"
 subdirectory. (On Linux systems, you'll need the version of the .so with the
-appended version numbers, e.g., `libonnxruntime.so.1.17.1`, and _not_ the
+appended version numbers, e.g., `libonnxruntime.so.1.18.0`, and _not_ the
 `libonnxruntime.so`, which is just a symbolic link.)  The archive will contain
 several other files containing C++ headers, debug symbols, and so on, but you
 shouldn't need anything other than the single onnxruntime shared library and
@@ -76,8 +76,8 @@ few lines of the following example.
 Note that if you want to use CUDA, you'll need to be using a version of the
 onnxruntime shared library with CUDA support, as well as be using a CUDA
 version supported by the underlying version of your onnxruntime library. For
-example, version 1.17.1 of the onnxruntime library only supports CUDA versions
-11.8 or 12.2. See
+example, version 1.18.0 of the onnxruntime library only supports CUDA versions
+11.8 or 12.4. See
 [the onnxruntime CUDA support documentation](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)
 for more specifics.
 
@@ -194,4 +194,3 @@ load a library from `test_data/`. So, if you are using one of these systems or
 want accelerator-related tests to run, you should set the environment variable
 to the path to the onnxruntime shared library.  Afterwards, `go test -v` should
 run and pass.
-
