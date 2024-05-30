@@ -404,9 +404,9 @@ const (
 	TensorElementDataTypeUint32    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32
 	TensorElementDataTypeUint64    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64
 
-	// Not supported by onnxruntime (as of onnxruntime version 1.17.1)
+	// Not supported by onnxruntime (as of onnxruntime version 1.18.0)
 	TensorElementDataTypeComplex64 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64
-	// Not supported by onnxruntime (as of onnxruntime version 1.17.1)
+	// Not supported by onnxruntime (as of onnxruntime version 1.18.0)
 	TensorElementDataTypeComplex128 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128
 
 	// Non-IEEE floating-point format based on IEEE754 single-precision
