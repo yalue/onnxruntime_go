@@ -96,6 +96,7 @@ func platformInitializeEnvironment() error {
 		// in our C code, which will be detected and result in an error at
 		// runtime.
 	}
+	C.SetTrainingApi()
 	libraryHandle = handle
 	return nil
 }
