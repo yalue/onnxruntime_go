@@ -111,6 +111,9 @@ func main() {
     ort.SetSharedLibraryPath("path/to/onnxruntime.so")
 
     err := ort.InitializeEnvironment()
+    if err != nil {
+        panic(err)
+    }
     defer ort.DestroyEnvironment()
 
     // For a slight performance boost and convenience when re-using existing
@@ -130,7 +133,7 @@ func main() {
 
     session, err := ort.NewAdvancedSession("path/to/network.onnx",
         []string{"Input 1 Name"}, []string{"Output 1 Name"},
-        []ArbitraryTensor{inputTensor}, []ArbitraryTensor{outputTensor}, nil)
+        []ort.ArbitraryTensor{inputTensor}, []ort.ArbitraryTensor{outputTensor}, nil)
     defer session.Destroy()
 
     // Calling Run() will run the network, reading the current contents of the
