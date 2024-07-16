@@ -32,6 +32,9 @@ typedef OrtStatus* (*AppendCoreMLProviderFn)(OrtSessionOptions*, uint32_t);
 // pointer. Intended to be called from Go. Returns nonzero on error.
 int SetAPIFromBase(OrtApiBase *api_base);
 
+// Get the version of the Onnxruntime library for logging.
+const char *GetVersion();
+
 // OrtSessionOptionsAppendExecutionProvider_CoreML is exported directly from
 // the Apple .dylib, so we call this function on Apple platforms to set the
 // function pointer to the correct address. On other platforms, the function

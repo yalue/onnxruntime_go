@@ -45,6 +45,11 @@ func (e *BadShapeDimensionError) Error() string {
 		e.DimensionIndex, e.DimensionSize)
 }
 
+// GetVersion return version of the Onnxruntime library for logging.
+func GetVersion() string {
+	return C.GoString(C.GetVersion())
+}
+
 // Does two things: converts the given OrtStatus to a Go error, and releases
 // the status. If the status is nil, this does nothing and returns nil.
 func statusToError(status *C.OrtStatus) error {
