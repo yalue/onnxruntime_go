@@ -1,6 +1,7 @@
 #include "onnxruntime_wrapper.h"
 
 static const OrtApi *ort_api = NULL;
+static const char *ORT_VERSION = NULL;
 
 static AppendCoreMLProviderFn append_coreml_provider_fn = NULL;
 
@@ -33,8 +34,13 @@ typedef struct {
 int SetAPIFromBase(OrtApiBase *api_base) {
   if (!api_base) return 1;
   ort_api = api_base->GetApi(ORT_API_VERSION);
+  ORT_VERSION = api_base->GetVersionString();
   if (!ort_api) return 2;
   return 0;
+}
+
+const char *GetVersion() {
+  return ORT_VERSION;
 }
 
 void SetCoreMLProviderFunctionPointer(void *ptr) {

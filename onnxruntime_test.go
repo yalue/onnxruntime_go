@@ -41,6 +41,9 @@ func getTestSharedLibraryPath(t testing.TB) string {
 		}
 		return "test_data/onnxruntime_arm64.so"
 	}
+	if runtime.GOARCH == "amd64" && runtime.GOOS == "darwin" {
+		return "test_data/onnxruntime_amd64.dylib"
+	}
 	return "test_data/onnxruntime.so"
 }
 
@@ -114,6 +117,15 @@ func newTestTensor[T TensorData](t testing.TB, s Shape) *Tensor[T] {
 		t.FailNow()
 	}
 	return toReturn
+}
+
+func TestGetVersion(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	if version := GetVersion(); version == "" {
+		t.Log("Not found version onnxruntime library")
+		t.FailNow()
+	}
 }
 
 func TestTensorTypes(t *testing.T) {
