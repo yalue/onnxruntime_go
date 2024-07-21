@@ -52,10 +52,14 @@ func (t *Scalar[T]) DataType() C.ONNXTensorElementDataType {
 	return GetTensorElementDataType[T]()
 }
 
-func (t *Scalar[_]) GetInternals() *TensorInternalData {
-	return &TensorInternalData{
+func (t *Scalar[_]) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
 		ortValue: t.ortValue,
 	}
+}
+
+func (t *Scalar[_]) GetONNXType() ONNXType {
+	return ONNXTypeTensor
 }
 
 // NewEmptyScalar creates a new scalar of type T.
@@ -481,14 +485,14 @@ func createCtrainingSessionWithPaths(checkpointState *C.OrtCheckpointState,
 
 // NewTrainingSessionWithOnnxData is like NewTrainingSession, but it accepts
 // bytes rather than paths to the training assets. Note that there does not
-// seem to currently be a way to export the trained model from a session instantiated
-// from bytes. If you wish to export the trained model, you should use NewTrainingSession
-// instead.
+// seem to currently be a way to export the trained model from a session
+// instantiated from bytes. If you wish to export the trained model, you should
+// use NewTrainingSession instead.
 func NewTrainingSessionWithOnnxData(checkpointData []byte,
 	trainingData []byte,
 	evalData []byte,
 	optimizerData []byte,
-	inputs []ArbitraryTensor, outputs []ArbitraryTensor,
+	inputs, outputs []Value,
 	options *SessionOptions) (*TrainingSession, error) {
 
 	if err := checkTraining(); err != nil {
@@ -536,7 +540,7 @@ func NewTrainingSessionWithOnnxData(checkpointData []byte,
 	}, nil
 }
 
-func validateInputOutputs(inputs, outputs []ArbitraryTensor) error {
+func validateInputOutputs(inputs, outputs []Value) error {
 	if len(inputs) == 0 {
 		return fmt.Errorf("inputs must have length greater than zero")
 	}
@@ -554,8 +558,7 @@ func NewTrainingSession(checkpointStatePath string,
 	trainingModelPath string,
 	evalModelPath string,
 	optimizerModelPath string,
-	inputs,
-	outputs []ArbitraryTensor,
+	inputs, outputs []Value,
 	options *SessionOptions) (*TrainingSession, error) {
 
 	if err := checkTraining(); err != nil {

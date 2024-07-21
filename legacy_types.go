@@ -46,8 +46,8 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 	// Unfortunately, a slice of pointers that satisfy an interface don't count
 	// as a slice of interfaces (at least, as I write this), so we'll make the
 	// conversion here.
-	tmpInputs := make([]ArbitraryTensor, len(inputs))
-	tmpOutputs := make([]ArbitraryTensor, len(outputs))
+	tmpInputs := make([]Value, len(inputs))
+	tmpOutputs := make([]Value, len(outputs))
 	for i, t := range inputs {
 		tmpInputs[i] = t
 	}

@@ -55,8 +55,7 @@ func InitializeRuntime(t testing.TB) {
 	SetSharedLibraryPath(getTestSharedLibraryPath(t))
 	e := InitializeEnvironment()
 	if e != nil {
-		t.Logf("Failed setting up onnxruntime environment: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed setting up onnxruntime environment: %s\n", e)
 	}
 }
 
@@ -64,8 +63,7 @@ func InitializeRuntime(t testing.TB) {
 func CleanupRuntime(t testing.TB) {
 	e := DestroyEnvironment()
 	if e != nil {
-		t.Logf("Error cleaning up environment: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error cleaning up environment: %s\n", e)
 	}
 }
 
@@ -74,15 +72,13 @@ func parseInputsJSON(path string, t testing.TB) *testInputsInfo {
 	toReturn := testInputsInfo{}
 	f, e := os.Open(path)
 	if e != nil {
-		t.Logf("Failed opening %s: %s\n", path, e)
-		t.FailNow()
+		t.Fatalf("Failed opening %s: %s\n", path, e)
 	}
 	defer f.Close()
 	d := json.NewDecoder(f)
 	e = d.Decode(&toReturn)
 	if e != nil {
-		t.Logf("Failed decoding %s: %s\n", path, e)
-		t.FailNow()
+		t.Fatalf("Failed decoding %s: %s\n", path, e)
 	}
 	return &toReturn
 }
@@ -113,8 +109,7 @@ func floatsEqual(a, b []float32) error {
 func newTestTensor[T TensorData](t testing.TB, s Shape) *Tensor[T] {
 	toReturn, e := NewEmptyTensor[T](s)
 	if e != nil {
-		t.Logf("Failed creating empty tensor with shape %s: %s\n", s, e)
-		t.FailNow()
+		t.Fatalf("Failed creating empty tensor with shape %s: %s\n", s, e)
 	}
 	return toReturn
 }
@@ -122,10 +117,11 @@ func newTestTensor[T TensorData](t testing.TB, s Shape) *Tensor[T] {
 func TestGetVersion(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
-	if version := GetVersion(); version == "" {
-		t.Log("Not found version onnxruntime library")
-		t.FailNow()
+	version := GetVersion()
+	if version == "" {
+		t.Fatalf("Not found version onnxruntime library")
 	}
+	t.Logf("Found onnxruntime library version: %s\n", version)
 }
 
 func TestTensorTypes(t *testing.T) {
@@ -133,9 +129,8 @@ func TestTensorTypes(t *testing.T) {
 	dataType := TensorElementDataType(GetTensorElementDataType[myFloat]())
 	expected := TensorElementDataType(TensorElementDataTypeDouble)
 	if dataType != expected {
-		t.Logf("Expected float64 data type to be %d (%s), got %d (%s)\n",
+		t.Fatalf("Expected float64 data type to be %d (%s), got %d (%s)\n",
 			expected, expected, dataType, dataType)
-		t.FailNow()
 	}
 	t.Logf("Got data type for float64-based double: %d (%s)\n",
 		dataType, dataType)
@@ -147,8 +142,7 @@ func TestCreateTensor(t *testing.T) {
 	s := NewShape(1, 2, 3)
 	tensor1, e := NewEmptyTensor[uint8](s)
 	if e != nil {
-		t.Logf("Failed creating %s uint8 tensor: %s\n", s, e)
-		t.FailNow()
+		t.Fatalf("Failed creating %s uint8 tensor: %s\n", s, e)
 	}
 	defer tensor1.Destroy()
 	if len(tensor1.GetData()) != 6 {
@@ -159,9 +153,8 @@ func TestCreateTensor(t *testing.T) {
 	// passed to NewEmptyTensor.
 	s[1] = 3
 	if tensor1.GetShape()[1] == s[1] {
-		t.Logf("Modifying the original shape incorrectly changed the " +
+		t.Fatalf("Modifying the original shape incorrectly changed the " +
 			"tensor's shape.\n")
-		t.FailNow()
 	}
 
 	// Try making a tensor with a different data type.
@@ -169,9 +162,8 @@ func TestCreateTensor(t *testing.T) {
 	data := []float32{1.0}
 	_, e = NewTensor(s, data)
 	if e == nil {
-		t.Logf("Didn't get error when creating a tensor with too little " +
+		t.Fatalf("Didn't get error when creating a tensor with too little " +
 			"data.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating a tensor without enough data: "+
 		"%s\n", e)
@@ -181,16 +173,14 @@ func TestCreateTensor(t *testing.T) {
 	data = []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 	tensor2, e := NewTensor(s, data)
 	if e != nil {
-		t.Logf("Error creating tensor with data: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating tensor with data: %s\n", e)
 	}
 	defer tensor2.Destroy()
 	// Make sure the tensor's internal slice only refers to the part we care
 	// about, and not the entire slice.
 	if len(tensor2.GetData()) != 10 {
-		t.Logf("New tensor data contains %d elements, when it should "+
+		t.Fatalf("New tensor data contains %d elements, when it should "+
 			"contain 10.\n", len(tensor2.GetData()))
-		t.FailNow()
 	}
 }
 
@@ -200,45 +190,40 @@ func TestBadTensorShapes(t *testing.T) {
 	s := NewShape()
 	_, e := NewEmptyTensor[float64](s)
 	if e == nil {
-		t.Logf("Didn't get an error when creating a tensor with an empty " +
+		t.Fatalf("Didn't get an error when creating a tensor with an empty " +
 			"shape.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating a tensor with an empty shape: "+
 		"%s\n", e)
 	s = NewShape(10, 0, 10)
 	_, e = NewEmptyTensor[uint16](s)
 	if e == nil {
-		t.Logf("Didn't get an error when creating a tensor with a shape " +
+		t.Fatalf("Didn't get an error when creating a tensor with a shape " +
 			"containing a 0 dimension.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating a tensor with a 0 dimension: "+
 		"%s\n", e)
 	s = NewShape(10, 10, -10)
 	_, e = NewEmptyTensor[int32](s)
 	if e == nil {
-		t.Logf("Didn't get an error when creating a tensor with a negative " +
-			"dimension.\n")
-		t.FailNow()
+		t.Fatalf("Didn't get an error when creating a tensor with a negative" +
+			" dimension.\n")
 	}
 	t.Logf("Got expected error when creating a tensor with a negative "+
 		"dimension: %s\n", e)
 	s = NewShape(10, -10, -10)
 	_, e = NewEmptyTensor[uint64](s)
 	if e == nil {
-		t.Logf("Didn't get an error when creating a tensor with two " +
+		t.Fatalf("Didn't get an error when creating a tensor with two " +
 			"negative dimensions.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating a tensor with two negative "+
 		"dimensions: %s\n", e)
 	s = NewShape(int64(1)<<62, 1, int64(1)<<62)
 	_, e = NewEmptyTensor[float32](s)
 	if e == nil {
-		t.Logf("Didn't get an error when creating a tensor with an " +
+		t.Fatalf("Didn't get an error when creating a tensor with an " +
 			"overflowing shape.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating a tensor with an overflowing "+
 		"shape: %s\n", e)
@@ -250,31 +235,26 @@ func TestCloneTensor(t *testing.T) {
 	originalData := []float32{1, 2, 3, 4}
 	originalTensor, e := NewTensor(NewShape(2, 2), originalData)
 	if e != nil {
-		t.Logf("Error creating tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating tensor: %s\n", e)
 	}
 	clone, e := originalTensor.Clone()
 	if e != nil {
-		t.Logf("Error cloning tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error cloning tensor: %s\n", e)
 	}
 	if !clone.GetShape().Equals(originalTensor.GetShape()) {
-		t.Logf("Clone shape (%s) doesn't match original shape (%s)\n",
+		t.Fatalf("Clone shape (%s) doesn't match original shape (%s)\n",
 			clone.GetShape(), originalTensor.GetShape())
-		t.FailNow()
 	}
 	cloneData := clone.GetData()
 	for i := range originalData {
 		if cloneData[i] != originalData[i] {
-			t.Logf("Clone data incorrect at index %d: %f (expected %f)\n",
+			t.Fatalf("Clone data incorrect at index %d: %f (expected %f)\n",
 				i, cloneData[i], originalData[i])
-			t.FailNow()
 		}
 	}
 	cloneData[2] = 1337
 	if originalData[2] != 3 {
-		t.Logf("Modifying clone data effected the original.\n")
-		t.FailNow()
+		t.Fatalf("Modifying clone data effected the original.\n")
 	}
 }
 
@@ -291,8 +271,7 @@ func TestZeroTensorContents(t *testing.T) {
 	a.ZeroContents()
 	for i, v := range data {
 		if v != 0.0 {
-			t.Logf("a[%d] = %f, expected it to be set to 0.\n", i, v)
-			t.FailNow()
+			t.Fatalf("a[%d] = %f, expected it to be set to 0.\n", i, v)
 		}
 	}
 
@@ -301,8 +280,7 @@ func TestZeroTensorContents(t *testing.T) {
 	customData := randomBytes(123, 2*shape.FlattenedSize())
 	b, e := NewCustomDataTensor(shape, customData, TensorElementDataTypeUint16)
 	if e != nil {
-		t.Logf("Error creating custom data tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating custom data tensor: %s\n", e)
 	}
 	defer b.Destroy()
 	for i := range customData {
@@ -314,8 +292,7 @@ func TestZeroTensorContents(t *testing.T) {
 	b.ZeroContents()
 	for i, v := range customData {
 		if v != 0 {
-			t.Logf("b[%d] = %d, expected it to be set to 0.\n", i, v)
-			t.FailNow()
+			t.Fatalf("b[%d] = %d, expected it to be set to 0.\n", i, v)
 		}
 	}
 }
@@ -327,39 +304,35 @@ func TestEmptyONNXFiles(t *testing.T) {
 	defer CleanupRuntime(t)
 	inputNames := []string{"whatever"}
 	outputNames := []string{"whatever_out"}
-	inputTensors := []ArbitraryTensor{nil}
-	outputTensors := []ArbitraryTensor{nil}
+	inputTensors := []Value{nil}
+	outputTensors := []Value{nil}
 	_, e := NewAdvancedSessionWithONNXData([]byte{}, inputNames, outputNames,
 		inputTensors, outputTensors, nil)
 	if e == nil {
 		// Really we're checking for a panic due to the empty slice, rather
 		// than a nil error.
-		t.Logf("Didn't get expected error when creating session.\n")
-		t.FailNow()
+		t.Fatalf("Didn't get expected error when creating session.\n")
 	}
 	t.Logf("Got expected error creating session with no ONNX content: %s\n", e)
 	_, e = NewDynamicAdvancedSessionWithONNXData([]byte{}, inputNames,
 		outputNames, nil)
 	if e == nil {
-		t.Logf("Didn't get expected error when creating dynamic advanced " +
+		t.Fatalf("Didn't get expected error when creating dynamic advanced " +
 			"session.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating dynamic session with no ONNX "+
 		"content: %s\n", e)
 	_, _, e = GetInputOutputInfoWithONNXData([]byte{})
 	if e == nil {
-		t.Logf("Didn't get expected error when getting input/output info " +
+		t.Fatalf("Didn't get expected error when getting input/output info " +
 			"with no ONNX content.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when getting input/output info with no "+
 		"ONNX content: %s\n", e)
 	_, e = GetModelMetadataWithONNXData([]byte{})
 	if e == nil {
-		t.Logf("Didn't get expected error when getting metadata with no " +
+		t.Fatalf("Didn't get expected error when getting metadata with no " +
 			"ONNX content.\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when getting metadata with no ONNX "+
 		"content: %s\n", e)
@@ -374,8 +347,7 @@ func TestExampleNetwork(t *testing.T) {
 	inputTensor, e := NewTensor(Shape(inputs.InputShape),
 		inputs.FlattenedInput)
 	if e != nil {
-		t.Logf("Failed creating input tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed creating input tensor: %s\n", e)
 	}
 	defer inputTensor.Destroy()
 	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
@@ -386,19 +358,17 @@ func TestExampleNetwork(t *testing.T) {
 		[]string{"1x4 Input Vector"}, []string{"1x2 Output Vector"},
 		[]*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
 	if e != nil {
-		t.Logf("Failed creating session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	e = session.Run()
 	if e != nil {
-		t.Logf("Failed to run the session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed to run the session: %s\n", e)
 	}
 	e = floatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
 	if e != nil {
-		t.Logf("The neural network didn't produce the correct result: %s\n", e)
-		t.FailNow()
+		t.Fatalf("The neural network didn't produce the correct result: %s\n",
+			e)
 	}
 }
 
@@ -411,8 +381,7 @@ func TestExampleNetworkDynamic(t *testing.T) {
 	inputTensor, e := NewTensor(Shape(inputs.InputShape),
 		inputs.FlattenedInput)
 	if e != nil {
-		t.Logf("Failed creating input tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed creating input tensor: %s\n", e)
 	}
 	defer inputTensor.Destroy()
 	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
@@ -422,20 +391,17 @@ func TestExampleNetworkDynamic(t *testing.T) {
 	session, e := NewDynamicSession[float32, float32]("test_data/example_network.onnx",
 		[]string{"1x4 Input Vector"}, []string{"1x2 Output Vector"})
 	if e != nil {
-		t.Logf("Failed creating session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	// running with the input
 	e = session.Run([]*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
 	if e != nil {
-		t.Logf("Failed to run the session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed to run the session: %s\n", e)
 	}
 	e = floatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
 	if e != nil {
-		t.Logf("The neural network didn't produce the correct result: %s\n", e)
-		t.FailNow()
+		t.Fatalf("The network didn't produce the correct result: %s\n", e)
 	}
 }
 
@@ -445,19 +411,16 @@ func TestEnableDisableTelemetry(t *testing.T) {
 
 	e := EnableTelemetry()
 	if e != nil {
-		t.Logf("Error enabling onnxruntime telemetry: %s\n", e)
-		t.Fail()
+		t.Errorf("Error enabling onnxruntime telemetry: %s\n", e)
 	}
 	e = DisableTelemetry()
 	if e != nil {
-		t.Logf("Error disabling onnxruntime telemetry: %s\n", e)
-		t.Fail()
+		t.Errorf("Error disabling onnxruntime telemetry: %s\n", e)
 	}
 	e = EnableTelemetry()
 	if e != nil {
-		t.Logf("Error re-enabling onnxruntime telemetry after disabling: %s\n",
-			e)
-		t.Fail()
+		t.Errorf("Error re-enabling onnxruntime telemetry after "+
+			"disabling: %s\n", e)
 	}
 }
 
@@ -468,20 +431,17 @@ func TestArbitraryTensors(t *testing.T) {
 	tensorShape := NewShape(2, 2)
 	tensorA, e := NewTensor(tensorShape, []uint8{1, 2, 3, 4})
 	if e != nil {
-		t.Logf("Error creating uint8 tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating uint8 tensor: %s\n", e)
 	}
 	defer tensorA.Destroy()
 	tensorB, e := NewTensor(tensorShape, []float64{5, 6, 7, 8})
 	if e != nil {
-		t.Logf("Error creating float64 tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating float64 tensor: %s\n", e)
 	}
 	defer tensorB.Destroy()
 	tensorC, e := NewTensor(tensorShape, []int16{9, 10, 11, 12})
 	if e != nil {
-		t.Logf("Error creating int16 tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating int16 tensor: %s\n", e)
 	}
 	defer tensorC.Destroy()
 	tensorList := []ArbitraryTensor{tensorA, tensorB, tensorC}
@@ -502,8 +462,7 @@ func randomMultitypeInputs(t *testing.T, seed int64) (*Tensor[uint8],
 	inputB, e := NewEmptyTensor[float64](NewShape(1, 2, 2))
 	if e != nil {
 		inputA.Destroy()
-		t.Logf("Failed creating input B: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed creating input B: %s\n", e)
 	}
 	inputA.GetData()[0] = uint8(rng.Intn(256))
 	for i := 0; i < 4; i++ {
@@ -530,15 +489,13 @@ func verifyTensorData[T TensorData](t *testing.T, tensor *Tensor[T],
 	expectedContent []T) {
 	data := tensor.GetData()
 	if len(data) != len(expectedContent) {
-		t.Logf("Expected tensor to contain %d elements, but it contains %d.\n",
+		t.Fatalf("Expected tensor to contain %d elements, got %d elements.\n",
 			len(expectedContent), len(data))
-		t.FailNow()
 	}
 	for i, v := range expectedContent {
 		if v != data[i] {
-			t.Logf("Data mismatch at element index %d: expected %v, got %v\n",
-				i, v, data[i])
-			t.FailNow()
+			t.Fatalf("Data mismatch at index %d: expected %v, got %v\n", i, v,
+				data[i])
 		}
 	}
 }
@@ -557,19 +514,18 @@ func TestDifferentInputOutputTypes(t *testing.T) {
 	outputB := newTestTensor[int64](t, NewShape(1, 1, 1))
 	defer outputB.Destroy()
 
+	// Decided to toss in an "ArbitraryTensor" here to ensure that it remains
+	// compatible with Value in the future.
 	session, e := NewAdvancedSession("test_data/example_multitype.onnx",
 		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"},
-		[]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{outputA, outputB}, nil)
+		[]Value{inputA, inputB}, []ArbitraryTensor{outputA, outputB}, nil)
 	if e != nil {
-		t.Logf("Failed creating session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Failed creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	e = session.Run()
 	if e != nil {
-		t.Logf("Error running session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error running session: %s\n", e)
 	}
 	expectedA, expectedB := getExpectedMultitypeOutputs(inputA, inputB)
 	verifyTensorData(t, outputA, expectedA)
@@ -614,11 +570,10 @@ func TestDynamicDifferentInputOutputTypes(t *testing.T) {
 		aInputs[i], bInputs[i] = randomMultitypeInputs(t, 999+int64(i))
 		aOutputs[i] = newTestTensor[int16](t, NewShape(1, 2, 2))
 		bOutputs[i] = newTestTensor[int64](t, NewShape(1, 1, 1))
-		e = session.Run([]ArbitraryTensor{aInputs[i], bInputs[i]},
-			[]ArbitraryTensor{aOutputs[i], bOutputs[i]})
+		e = session.Run([]Value{aInputs[i], bInputs[i]},
+			[]Value{aOutputs[i], bOutputs[i]})
 		if e != nil {
-			t.Logf("Failed running session for test %d: %s\n", i, e)
-			t.FailNow()
+			t.Fatalf("Failed running session for test %d: %s\n", i, e)
 		}
 	}
 
@@ -637,38 +592,50 @@ func TestDynamicAllocatedOutputTensor(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
 
-	session, err := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
+	session, e := NewDynamicAdvancedSession("test_data/example_multitype.onnx",
 		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"}, nil)
+	if e != nil {
+		t.Fatalf("Error creating session: %s\n", e)
+	}
 	defer session.Destroy()
 
 	// Actually create the inputs and run the tests.
 	aInput, bInput := randomMultitypeInputs(t, 999)
-	var outputs [2]ArbitraryTensor
-	err = session.Run([]ArbitraryTensor{aInput, bInput}, outputs[:])
-	if err != nil {
-		t.Logf("Failed running session: %s\n", err)
-		t.FailNow()
+	var outputs [2]Value
+	e = session.Run([]Value{aInput, bInput}, outputs[:])
+	if e != nil {
+		t.Fatalf("Failed running session: %s\n", e)
 	}
+	defer func() {
+		for _, output := range outputs {
+			output.Destroy()
+		}
+	}()
 
 	expectedA, expectedB := getExpectedMultitypeOutputs(aInput, bInput)
-	if outputA, ok := outputs[0].(*Tensor[int16]); !ok {
-		t.Logf("Expected outputA to be of type %T, got of type %T\n", outputA, outputs[0])
-		t.FailNow()
-	} else if expectedShape := NewShape(1, 2, 2); !outputA.shape.Equals(expectedShape) {
-		t.Logf("Expected outputA to be of shape %s, got of shape %s\n", expectedShape, outputA.shape)
-		t.FailNow()
-	} else {
-		verifyTensorData(t, outputA, expectedA)
+	expectedShape := NewShape(1, 2, 2)
+	outputA, ok := outputs[0].(*Tensor[int16])
+	if !ok {
+		t.Fatalf("Expected outputA to be of type %T, got of type %T\n",
+			outputA, outputs[0])
 	}
-	if outputB, ok := outputs[1].(*Tensor[int64]); !ok {
-		t.Logf("Expected outputB to be of type %T, got of type %T\n", outputB, outputs[1])
-		t.FailNow()
-	} else if expectedShape := NewShape(1, 1, 1); !outputB.shape.Equals(expectedShape) {
-		t.Logf("Expected outputB to be of shape %s, got of shape %s\n", expectedShape, outputB.shape)
-		t.FailNow()
-	} else {
-		verifyTensorData(t, outputB, expectedB)
+	if !outputA.shape.Equals(expectedShape) {
+		t.Fatalf("Expected outputA to be of shape %s, got of shape %s\n",
+			expectedShape, outputA.shape)
 	}
+	verifyTensorData(t, outputA, expectedA)
+
+	outputB, ok := outputs[1].(*Tensor[int64])
+	expectedShape = NewShape(1, 1, 1)
+	if !ok {
+		t.Fatalf("Expected outputB to be of type %T, got of type %T\n",
+			outputB, outputs[1])
+	}
+	if !outputB.shape.Equals(expectedShape) {
+		t.Fatalf("Expected outputB to be of shape %s, got of shape %s\n",
+			expectedShape, outputB.shape)
+	}
+	verifyTensorData(t, outputB, expectedB)
 }
 
 // Makes sure that the sum of each vector in the input tensor matches the
@@ -684,17 +651,14 @@ func checkVectorSum(input *Tensor[float32], output *Tensor[float32],
 	inputShape := input.GetShape()
 	outputShape := output.GetShape()
 	if len(inputShape) != 2 {
-		t.Logf("Expected a 2-dimensional input shape, got %v\n", inputShape)
-		t.FailNow()
+		t.Fatalf("Expected a 2-dimensional input shape, got %v\n", inputShape)
 	}
 	if len(outputShape) != 1 {
-		t.Logf("Expected 1-dimensional output shape, got %v\n", outputShape)
-		t.FailNow()
+		t.Fatalf("Expected 1-dimensional output shape, got %v\n", outputShape)
 	}
 	if inputShape[0] != outputShape[0] {
-		t.Logf("Input and output batch dimensions don't match (%d vs %d)\n",
+		t.Fatalf("Input and output batch dimensions don't match (%d vs %d)\n",
 			inputShape[0], outputShape[0])
-		t.FailNow()
 	}
 
 	// Compute the sums in Go
@@ -712,8 +676,7 @@ func checkVectorSum(input *Tensor[float32], output *Tensor[float32],
 
 	e := floatsEqual(expectedSums, output.GetData())
 	if e != nil {
-		t.Logf("ONNX-produced sums don't match CPU-produced sums: %s\n", e)
-		t.FailNow()
+		t.Fatalf("ONNX-produced sums don't match CPU-produced sums: %s\n", e)
 	}
 }
 
@@ -725,8 +688,7 @@ func TestDynamicInputOutputAxes(t *testing.T) {
 	session, e := NewDynamicAdvancedSession(netPath,
 		[]string{"input_vectors"}, []string{"output_scalars"}, nil)
 	if e != nil {
-		t.Logf("Error loading %s: %s\n", netPath, e)
-		t.FailNow()
+		t.Fatalf("Error loading %s: %s\n", netPath, e)
 	}
 	defer session.Destroy()
 	rng := rand.New(rand.NewSource(1234))
@@ -741,9 +703,8 @@ func TestDynamicInputOutputAxes(t *testing.T) {
 		inputShape := NewShape(int64(i), 10)
 		input, e := NewTensor(inputShape, dataBuffer)
 		if e != nil {
-			t.Logf("Error creating input tensor with shape %v: %s\n",
+			t.Fatalf("Error creating input tensor with shape %v: %s\n",
 				inputShape, e)
-			t.FailNow()
 		}
 
 		// Populate the input with new random floats.
@@ -753,12 +714,12 @@ func TestDynamicInputOutputAxes(t *testing.T) {
 		}
 
 		// Run the session; make onnxruntime allocate the output tensor for us.
-		outputs := []ArbitraryTensor{nil}
-		e = session.Run([]ArbitraryTensor{input}, outputs)
+		outputs := []Value{nil}
+		e = session.Run([]Value{input}, outputs)
 		if e != nil {
 			input.Destroy()
-			t.Logf("Error running the session with batch size %d: %s\n", i, e)
-			t.FailNow()
+			t.Fatalf("Error running the session with batch size %d: %s\n",
+				i, e)
 		}
 
 		// The checkVectorSum function will destroy the input and output tensor
@@ -789,21 +750,18 @@ func TestWrongInputs(t *testing.T) {
 	// input or output.
 	wrongTypeTensor := newTestTensor[float32](t, NewShape(1, 2, 2))
 	defer wrongTypeTensor.Destroy()
-	e = session.Run([]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{wrongTypeTensor, outputB})
+	e = session.Run([]Value{inputA, inputB}, []Value{wrongTypeTensor, outputB})
 	if e == nil {
-		t.Logf("Didn't get expected error when passing a float32 tensor in " +
-			"place of an int16 output tensor.\n")
-		t.FailNow()
+		t.Fatalf("Didn't get expected error when passing a float32 tensor in" +
+			" place of an int16 output tensor.\n")
 	}
 	t.Logf("Got expected error when passing a float32 tensor in place of an "+
 		"int16 output tensor: %s\n", e)
-	e = session.Run([]ArbitraryTensor{inputA, wrongTypeTensor},
-		[]ArbitraryTensor{outputA, outputB})
+	e = session.Run([]Value{inputA, wrongTypeTensor},
+		[]Value{outputA, outputB})
 	if e == nil {
-		t.Logf("Didn't get expected error when passing a float32 tensor in " +
-			"place of a float64 input tensor.\n")
-		t.FailNow()
+		t.Fatalf("Didn't get expected error when passing a float32 tensor in" +
+			" place of a float64 input tensor.\n")
 	}
 	t.Logf("Got expected error when passing a float32 tensor in place of a "+
 		"float64 input tensor: %s\n", e)
@@ -813,33 +771,29 @@ func TestWrongInputs(t *testing.T) {
 	// output.
 	wrongShapeInput := newTestTensor[uint8](t, NewShape(22))
 	defer wrongShapeInput.Destroy()
-	e = session.Run([]ArbitraryTensor{wrongShapeInput, inputB},
-		[]ArbitraryTensor{outputA, outputB})
+	e = session.Run([]Value{wrongShapeInput, inputB},
+		[]Value{outputA, outputB})
 	if e == nil {
-		t.Logf("Didn't get expected error when running with an incorrectly " +
-			"shaped input.\n")
-		t.FailNow()
+		t.Fatalf("Didn't get expected error when running with an incorrectly" +
+			" shaped input.\n")
 	}
 	t.Logf("Got expected error when running with an incorrectly shaped "+
 		"input: %s\n", e)
 	wrongShapeOutput := newTestTensor[int64](t, NewShape(1, 1, 1, 1, 1, 1))
 	defer wrongShapeOutput.Destroy()
-	e = session.Run([]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{outputA, wrongShapeOutput})
+	e = session.Run([]Value{inputA, inputB},
+		[]Value{outputA, wrongShapeOutput})
 	if e == nil {
-		t.Logf("Didn't get expected error when running with an incorrectly " +
-			"shaped output.\n")
-		t.FailNow()
+		t.Fatalf("Didn't get expected error when running with an incorrectly" +
+			" shaped output.\n")
 	}
 	t.Logf("Got expected error when running with an incorrectly shaped "+
 		"output: %s\n", e)
 
-	e = session.Run([]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{outputA, outputB})
+	e = session.Run([]Value{inputA, inputB}, []Value{outputA, outputB})
 	if e != nil {
-		t.Logf("Got error attempting to (correctly) Run a session after "+
+		t.Fatalf("Got error attempting to (correctly) Run a session after "+
 			"attempting to use incorrect inputs or outputs: %s\n", e)
-		t.FailNow()
 	}
 }
 
@@ -849,16 +803,13 @@ func TestGetInputOutputInfo(t *testing.T) {
 	file := "test_data/example_several_inputs_and_outputs.onnx"
 	inputs, outputs, e := GetInputOutputInfo(file)
 	if e != nil {
-		t.Logf("Error getting input and output info for %s: %s\n", file, e)
-		t.FailNow()
+		t.Fatalf("Error getting input and output info for %s: %s\n", file, e)
 	}
 	if len(inputs) != 3 {
-		t.Logf("Expected 3 inputs, got %d\n", len(inputs))
-		t.FailNow()
+		t.Fatalf("Expected 3 inputs, got %d\n", len(inputs))
 	}
 	if len(outputs) != 2 {
-		t.Logf("Expected 2 outputs, got %d\n", len(outputs))
-		t.FailNow()
+		t.Fatalf("Expected 2 outputs, got %d\n", len(outputs))
 	}
 	for i, v := range inputs {
 		t.Logf("Input %d: %s\n", i, &v)
@@ -868,38 +819,32 @@ func TestGetInputOutputInfo(t *testing.T) {
 	}
 
 	if outputs[1].Name != "output 2" {
-		t.Logf("Incorrect output 1 name: %s, expected \"output 2\"\n",
+		t.Errorf("Incorrect output 1 name: %s, expected \"output 2\"\n",
 			outputs[1].Name)
-		t.Fail()
 	}
 	expectedShape := NewShape(1, 2, 3, 4, 5)
 	if !outputs[1].Dimensions.Equals(expectedShape) {
-		t.Logf("Incorrect output 1 shape: %s, expected %s\n",
+		t.Errorf("Incorrect output 1 shape: %s, expected %s\n",
 			outputs[1].Dimensions, expectedShape)
-		t.Fail()
 	}
 	var expectedType TensorElementDataType = TensorElementDataTypeDouble
 	if outputs[1].DataType != expectedType {
-		t.Logf("Incorrect output 1 data type: %s, expected %s\n",
+		t.Errorf("Incorrect output 1 data type: %s, expected %s\n",
 			outputs[1].DataType, expectedType)
-		t.Fail()
 	}
 	if inputs[0].Name != "input 1" {
-		t.Logf("Incorrect input 0 name: %s, expected \"input 1\"\n",
+		t.Errorf("Incorrect input 0 name: %s, expected \"input 1\"\n",
 			inputs[0].Name)
-		t.Fail()
 	}
 	expectedShape = NewShape(2, 5, 2, 5)
 	if !inputs[0].Dimensions.Equals(expectedShape) {
-		t.Logf("Incorrect input 0 shape: %s, expected %s\n",
+		t.Errorf("Incorrect input 0 shape: %s, expected %s\n",
 			inputs[0].Dimensions, expectedShape)
-		t.Fail()
 	}
 	expectedType = TensorElementDataTypeInt32
 	if inputs[0].DataType != expectedType {
-		t.Logf("Incorrect input 0 data type: %s, expected %s\n",
+		t.Errorf("Incorrect input 0 data type: %s, expected %s\n",
 			inputs[0].DataType, expectedType)
-		t.Fail()
 	}
 }
 
@@ -909,14 +854,12 @@ func TestModelMetadata(t *testing.T) {
 	file := "test_data/example_network.onnx"
 	metadata, e := GetModelMetadata(file)
 	if e != nil {
-		t.Logf("Error getting metadata for %s: %s\n", file, e)
-		t.FailNow()
+		t.Fatalf("Error getting metadata for %s: %s\n", file, e)
 	}
 	// We'll just test Destroy once; after this we won't check its return value
 	e = metadata.Destroy()
 	if e != nil {
-		t.Logf("Error destroying metadata: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error destroying metadata: %s\n", e)
 	}
 
 	// Try getting the metadata from a session instead of from a file.
@@ -927,93 +870,78 @@ func TestModelMetadata(t *testing.T) {
 	session, e := NewDynamicAdvancedSession(file, []string{"Input"},
 		[]string{"Output"}, nil)
 	if e != nil {
-		t.Logf("Error creating session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	metadata, e = session.GetModelMetadata()
 	if e != nil {
-		t.Logf("Error getting metadata from DynamicAdvancedSession: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error getting metadata from DynamicAdvancedSession: %s\n", e)
 	}
 	defer metadata.Destroy()
 	producerName, e := metadata.GetProducerName()
 	if e != nil {
-		t.Logf("Error getting producer name: %s\n", e)
-		t.Fail()
+		t.Errorf("Error getting producer name: %s\n", e)
 	} else {
 		t.Logf("Got producer name: %s\n", producerName)
 	}
 	graphName, e := metadata.GetGraphName()
 	if e != nil {
-		t.Logf("Error getting graph name: %s\n", e)
-		t.Fail()
+		t.Errorf("Error getting graph name: %s\n", e)
 	} else {
 		t.Logf("Got graph name: %s\n", graphName)
 	}
 	domainStr, e := metadata.GetDomain()
 	if e != nil {
-		t.Logf("Error getting domain: %s\n", e)
-		t.Fail()
+		t.Errorf("Error getting domain: %s\n", e)
 	} else {
 		t.Logf("Got domain: %s\n", domainStr)
 		if domainStr != "test domain" {
-			t.Logf("Incorrect domain string, expected \"test domain\"\n")
-			t.Fail()
+			t.Errorf("Incorrect domain string, expected \"test domain\"\n")
 		}
 	}
 	description, e := metadata.GetDescription()
 	if e != nil {
-		t.Logf("Error getting description: %s\n", e)
-		t.Fail()
+		t.Errorf("Error getting description: %s\n", e)
 	} else {
 		t.Logf("Got description: %s\n", description)
 	}
 	version, e := metadata.GetVersion()
 	if e != nil {
-		t.Logf("Error getting version: %s\n", e)
-		t.Fail()
+		t.Errorf("Error getting version: %s\n", e)
 	} else {
 		t.Logf("Got version: %d\n", version)
 		if version != 1337 {
-			t.Logf("Incorrect version number, expected 1337\n")
-			t.Fail()
+			t.Errorf("Incorrect version number, expected 1337\n")
 		}
 	}
 	mapKeys, e := metadata.GetCustomMetadataMapKeys()
 	if e != nil {
-		t.Logf("Error getting custom metadata keys: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error getting custom metadata keys: %s\n", e)
 	}
 	t.Logf("Got %d custom metadata map keys.\n", len(mapKeys))
 	if len(mapKeys) != 2 {
-		t.Logf("Incorrect number of custom metadata keys, expected 2")
-		t.Fail()
+		t.Errorf("Incorrect number of custom metadata keys, expected 2")
 	}
 	for _, k := range mapKeys {
 		value, present, e := metadata.LookupCustomMetadataMap(k)
 		if e != nil {
-			t.Logf("Error looking up key %s in custom metadata: %s\n", k, e)
-			t.Fail()
+			t.Errorf("Error looking up key %s in custom metadata: %s\n", k, e)
 		} else {
 			if !present {
-				t.Logf("LookupCustomMetadataMap didn't return true for a " +
+				t.Errorf("LookupCustomMetadataMap didn't return true for a " +
 					"key that should be present in the map\n")
-				t.Fail()
 			}
 			t.Logf("  Metadata key \"%s\" = \"%s\"\n", k, value)
 		}
 	}
 	badValue, present, e := metadata.LookupCustomMetadataMap("invalid key")
 	if len(badValue) != 0 {
-		t.Logf("Didn't get an empty string when looking up an invalid "+
+		t.Fatalf("Didn't get an empty string when looking up an invalid "+
 			"metadata key, got \"%s\" instead\n", badValue)
-		t.FailNow()
 	}
 	if present {
-		t.Logf("LookupCustomMetadataMap didn't return false for a key that " +
-			"isn't in the map\n")
-		t.Fail()
+		t.Errorf("LookupCustomMetadataMap didn't return false for a key that" +
+			" isn't in the map\n")
 	}
 	// Tossing in this check, since the docs aren't clear on this topic. (The
 	// docs specify returning an empty string, but do not mention a non-NULL
@@ -1043,38 +971,32 @@ func TestCustomDataTensors(t *testing.T) {
 	// it works this way, too.
 	v, e := NewCustomDataTensor(shape, tensorData, TensorElementDataTypeUint16)
 	if e != nil {
-		t.Logf("Error creating uint16 CustomDataTensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating uint16 CustomDataTensor: %s\n", e)
 	}
 	shape[0] = 6
 	if v.GetShape().Equals(shape) {
-		t.Logf("CustomDataTensor didn't correctly create a Clone of its shape")
-		t.FailNow()
+		t.Fatalf("CustomDataTensor didn't properly clone its shape")
 	}
 	e = v.Destroy()
 	if e != nil {
-		t.Logf("Error destroying CustomDataTensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error destroying CustomDataTensor: %s\n", e)
 	}
 	tensorData = randomBytes(1234, 2*shape.FlattenedSize())
 	v, e = NewCustomDataTensor(shape, tensorData, TensorElementDataTypeFloat16)
 	if e != nil {
-		t.Logf("Error creating float16 tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating float16 tensor: %s\n", e)
 	}
 	e = v.Destroy()
 	if e != nil {
-		t.Logf("Error destroying float16 tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error destroying float16 tensor: %s\n", e)
 	}
 	// Make sure we don't fail if providing more data than necessary
 	shape[0] = 1
 	v, e = NewCustomDataTensor(shape, tensorData,
 		TensorElementDataTypeBFloat16)
 	if e != nil {
-		t.Logf("Got error when creating a tensor with more data than "+
+		t.Fatalf("Got error when creating a tensor with more data than "+
 			"necessary: %s\n", e)
-		t.FailNow()
 	}
 	v.Destroy()
 
@@ -1083,9 +1005,8 @@ func TestCustomDataTensors(t *testing.T) {
 	v, e = NewCustomDataTensor(shape, tensorData, TensorElementDataTypeFloat16)
 	if e == nil {
 		v.Destroy()
-		t.Logf("Didn't get error when creating custom tensor with an " +
+		t.Fatalf("Didn't get error when creating custom tensor with an " +
 			"invalid shape\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error creating tensor with invalid shape: %s\n", e)
 	shape = NewShape(1, 2, 3, 4, 5)
@@ -1093,9 +1014,8 @@ func TestCustomDataTensors(t *testing.T) {
 	v, e = NewCustomDataTensor(shape, tensorData, TensorElementDataTypeUint8)
 	if e == nil {
 		v.Destroy()
-		t.Logf("Didn't get error when creating custom tensor with too " +
+		t.Fatalf("Didn't get error when creating custom tensor with too " +
 			"little data\n")
-		t.FailNow()
 	}
 	t.Logf("Got expected error when creating custom data tensor with "+
 		"too little data: %s\n", e)
@@ -1106,8 +1026,7 @@ func TestCustomDataTensors(t *testing.T) {
 	v, e = NewCustomDataTensor(NewShape(2), tensorData, badType)
 	if e == nil {
 		v.Destroy()
-		t.Logf("Didn't get error when creating custom tensor with bad type\n")
-		t.FailNow()
+		t.Fatalf("Didn't get error when creating tensor with bad type\n")
 	}
 	t.Logf("Got expected error when creating custom data tensor with bad "+
 		"type: %s\n", e)
@@ -1143,36 +1062,31 @@ func TestFloat16Network(t *testing.T) {
 	inputTensor, e := NewCustomDataTensor(NewShape(1, 2, 2, 2), inputData,
 		TensorElementDataTypeFloat16)
 	if e != nil {
-		t.Logf("Error creating input tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating input tensor: %s\n", e)
 	}
 	defer inputTensor.Destroy()
 	outputTensor, e := NewCustomDataTensor(NewShape(1, 2, 2, 2), outputData,
 		TensorElementDataTypeBFloat16)
 	if e != nil {
-		t.Logf("Error creating output tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating output tensor: %s\n", e)
 	}
 	defer outputTensor.Destroy()
 
 	session, e := NewAdvancedSession("test_data/example_float16.onnx",
 		[]string{"InputA"}, []string{"OutputA"},
-		[]ArbitraryTensor{inputTensor}, []ArbitraryTensor{outputTensor}, nil)
+		[]Value{inputTensor}, []Value{outputTensor}, nil)
 	if e != nil {
-		t.Logf("Error creating session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	e = session.Run()
 	if e != nil {
-		t.Logf("Error running session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error running session: %s\n", e)
 	}
 	for i := range outputData {
 		if outputData[i] != expectedOutput[i] {
-			t.Logf("Incorrect output byte at index %d: 0x%02x (expected "+
+			t.Fatalf("Incorrect output byte at index %d: 0x%02x (expected "+
 				"0x%02x)\n", i, outputData[i], expectedOutput[i])
-			t.FailNow()
 		}
 	}
 }
@@ -1189,14 +1103,12 @@ func prepareBenchmarkTensors(t testing.TB, seed int64) (*Tensor[float32],
 	}
 	input, e := NewTensor(NewShape(1, vectorLength), inputData)
 	if e != nil {
-		t.Logf("Error creating input tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating input tensor: %s\n", e)
 	}
 	output, e := NewEmptyTensor[float32](NewShape(1, vectorLength))
 	if e != nil {
 		input.Destroy()
-		t.Logf("Error creating output tensor: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating output tensor: %s\n", e)
 	}
 	return input, output
 }
@@ -1210,17 +1122,15 @@ func testBigSessionWithOptions(t *testing.T, options *SessionOptions) {
 	defer input.Destroy()
 	defer output.Destroy()
 	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, options)
+		[]string{"Input"}, []string{"Output"},
+		[]Value{input}, []Value{output}, options)
 	if e != nil {
-		t.Logf("Error creating session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	e = session.Run()
 	if e != nil {
-		t.Logf("Error running the session: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error running the session: %s\n", e)
 	}
 }
 
@@ -1234,19 +1144,17 @@ func benchmarkBigSessionWithOptions(b *testing.B, options *SessionOptions) {
 	defer input.Destroy()
 	defer output.Destroy()
 	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, options)
+		[]string{"Input"}, []string{"Output"},
+		[]Value{input}, []Value{output}, options)
 	if e != nil {
-		b.Logf("Error creating session: %s\n", e)
-		b.FailNow()
+		b.Fatalf("Error creating session: %s\n", e)
 	}
 	defer session.Destroy()
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
 		e = session.Run()
 		if e != nil {
-			b.Logf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
-			b.FailNow()
+			b.Fatalf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
 		}
 	}
 }
@@ -1256,29 +1164,24 @@ func TestSessionOptions(t *testing.T) {
 	defer CleanupRuntime(t)
 	options, e := NewSessionOptions()
 	if e != nil {
-		t.Logf("Error creating session options: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session options: %s\n", e)
 	}
 	defer options.Destroy()
 	e = options.SetIntraOpNumThreads(3)
 	if e != nil {
-		t.Logf("Error setting intra-op num threads: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error setting intra-op num threads: %s\n", e)
 	}
 	e = options.SetInterOpNumThreads(1)
 	if e != nil {
-		t.Logf("Error setting inter-op num threads: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error setting inter-op num threads: %s\n", e)
 	}
 	e = options.SetCpuMemArena(true)
 	if e != nil {
-		t.Logf("Error setting CPU memory arena: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error setting CPU memory arena: %s\n", e)
 	}
 	e = options.SetMemPattern(true)
 	if e != nil {
-		t.Logf("Error setting memory pattern: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error setting memory pattern: %s\n", e)
 	}
 	testBigSessionWithOptions(t, options)
 }
@@ -1291,19 +1194,16 @@ func runNumThreadsBenchmark(b *testing.B, nThreads int) {
 	defer CleanupRuntime(b)
 	options, e := NewSessionOptions()
 	if e != nil {
-		b.Logf("Error creating options: %s\n", e)
-		b.FailNow()
+		b.Fatalf("Error creating options: %s\n", e)
 	}
 	defer options.Destroy()
 	e = options.SetIntraOpNumThreads(nThreads)
 	if e != nil {
-		b.Logf("Error setting intra-op threads to %d: %s\n", nThreads, e)
-		b.FailNow()
+		b.Fatalf("Error setting intra-op threads to %d: %s\n", nThreads, e)
 	}
 	e = options.SetInterOpNumThreads(nThreads)
 	if e != nil {
-		b.Logf("Error setting inter-op threads to %d: %s\n", nThreads, e)
-		b.FailNow()
+		b.Fatalf("Error setting inter-op threads to %d: %s\n", nThreads, e)
 	}
 	benchmarkBigSessionWithOptions(b, options)
 }
@@ -1346,14 +1246,12 @@ func getCUDASessionOptions(t testing.TB) *SessionOptions {
 	// Next, provide the CUDA options to the sesison options
 	sessionOptions, e := NewSessionOptions()
 	if e != nil {
-		t.Logf("Error creating SessionOptions: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating SessionOptions: %s\n", e)
 	}
 	e = sessionOptions.AppendExecutionProviderCUDA(cudaOptions)
 	if e != nil {
 		sessionOptions.Destroy()
-		t.Logf("Error setting CUDA execution provider options: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error setting CUDA execution provider options: %s\n", e)
 	}
 	return sessionOptions
 }
@@ -1396,14 +1294,12 @@ func getTensorRTSessionOptions(t testing.TB) *SessionOptions {
 	}
 	sessionOptions, e := NewSessionOptions()
 	if e != nil {
-		t.Logf("Error creating SessionOptions: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating SessionOptions: %s\n", e)
 	}
 	e = sessionOptions.AppendExecutionProviderTensorRT(trtOptions)
 	if e != nil {
 		sessionOptions.Destroy()
-		t.Logf("Error setting TensorRT execution provider: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error setting TensorRT execution provider: %s\n", e)
 	}
 	return sessionOptions
 }
@@ -1428,8 +1324,7 @@ func BenchmarkTensorRTSession(b *testing.B) {
 func getCoreMLSessionOptions(t testing.TB) *SessionOptions {
 	options, e := NewSessionOptions()
 	if e != nil {
-		t.Logf("Error creating session options: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session options: %s\n", e)
 	}
 	e = options.AppendExecutionProviderCoreML(0)
 	if e != nil {
@@ -1460,8 +1355,7 @@ func BenchmarkCoreMLSession(b *testing.B) {
 func getDirectMLSessionOptions(t testing.TB) *SessionOptions {
 	options, e := NewSessionOptions()
 	if e != nil {
-		t.Logf("Error creating session options: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session options: %s\n", e)
 	}
 	e = options.AppendExecutionProviderDirectML(0)
 	if e != nil {
@@ -1493,8 +1387,7 @@ func BenchmarkDirectMLSession(b *testing.B) {
 func getOpenVINOSessionOptions(t testing.TB) *SessionOptions {
 	options, e := NewSessionOptions()
 	if e != nil {
-		t.Logf("Error creating session options: %s\n", e)
-		t.FailNow()
+		t.Fatalf("Error creating session options: %s\n", e)
 	}
 	e = options.AppendExecutionProviderOpenVINO(map[string]string{})
 	if e != nil {

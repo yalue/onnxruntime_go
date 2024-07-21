@@ -133,7 +133,7 @@ func main() {
 
     session, err := ort.NewAdvancedSession("path/to/network.onnx",
         []string{"Input 1 Name"}, []string{"Output 1 Name"},
-        []ort.ArbitraryTensor{inputTensor}, []ort.ArbitraryTensor{outputTensor}, nil)
+        []ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
     defer session.Destroy()
 
     // Calling Run() will run the network, reading the current contents of the
@@ -197,3 +197,27 @@ load a library from `test_data/`. So, if you are using one of these systems or
 want accelerator-related tests to run, you should set the environment variable
 to the path to the onnxruntime shared library.  Afterwards, `go test -v` should
 run and pass.
+
+
+Training API Support
+--------------------
+
+This wrapper supports the onnxruntime training API on limited platforms. See
+the `NewTrainingSession` and associated data types or functions to use it. So
+far, the training API has only been tested on Linux, on `x86_64` architectures.
+
+If you are not sure whether your platform or build of onnxruntime supports
+training, you can call `onnxruntime_go.IsTrainingSupported()`, which will
+return `true` if training is supported on your system.
+
+*The training API is not currently supported on Windows.*  While training
+support has simply not been tested on other Linux and Mac systems, it is
+currently known to be unsupported on Windows.  This is due to
+`NewTrainingSession` fundamentally requiring filesystem paths, even within the
+C API.  This is difficult to handle in Windows, since the Windows onnxruntime
+DLLs require wide-character strings (unlike the Linux and osx shared
+libraries).  This means that calling these functions on Windows would require
+converting UTF-8 Go `string`s to compatible strings when invoking the C API on
+Windows only. This should possible, but it is simply not a development priority
+at the moment.
+
