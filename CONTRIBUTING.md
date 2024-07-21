@@ -40,17 +40,17 @@ Documentation
 Tests
 -----
 
- - All new features must include a basic unit test (in `onnxruntime_test.go` or
-   `onnxruntime_training_test.go`) to serve as a sanity check.
+ - All new features and bugfixes must include a basic unit test (in
+   `onnxruntime_test.go` or `onnxruntime_training_test.go`) to serve as a
+   sanity check.
 
  - If a test is for an platform-dependent or execution-provider-dependent
-   feature, the test must be skipped on systems if run on an unsupported
-   system.
+   feature, the test must be skipped if run on an unsupported system.
 
  - No tests should panic.  Always check errors and fail rather than allowing
    tests to panic.
 
- - In short, after _every_ change, `go test -v -bench=.` must pass on _every_
+ - Every change must ensure that `go test -v -bench=.` passes on every
    supported platform.
 
  - Every test failure should be accompanied by a message containing the reason,
@@ -60,7 +60,7 @@ Tests
 Adding New Files
 ----------------
 
- - Try not to add new files unless absolutely necessary.
+ - Apart from testing data, try not to add new source files.
 
  - Do not add third-party code or headers.  The only exceptions for now are
    `onnxruntime_c_api.h` and `onnxruntime_training_c_api.h`.
@@ -72,13 +72,12 @@ Adding New Files
    `x86_64` Linux), but I do not want this project turning into an unofficial
    distribution channel for onnxruntime libraries.  It also clogs up the git
    repo with large files, and increases the size of the history every time
-   these files are updated.  The libraries that are included _only_ serve to
-   ensure that running `go test -v -bench=.` will run and succeed without
-   modification for a large portion of users. Currently: amd64 Windows,
-   arm64 Linux (I wish I hadn't included this!), arm64 osx, and
-   amd64 osx. All other users must set the `ONNXRUNTIME_SHARED_LIBRARY_PATH`
-   environment variable to a valid path to the correct `onnxruntime` shared
-   library file prior to running `go test -v`.
+   these files are updated.  The libraries that are included were only intended
+   to allow a majority of users to run `go test -v -bench=.` without further
+   setup or modification. Currently: amd64 Windows, arm64 Linux (I wish I
+   hadn't included this!), arm64 osx, and amd64 osx. All other users must set
+   the `ONNXRUNTIME_SHARED_LIBRARY_PATH` environment variable to a valid path
+   to the correct `onnxruntime` shared library file prior to running tests.
 
  - If you need to add a .onnx file for a test, place both the .onnx file
    _and_ the script used to generate it into `test_data/`.
@@ -97,7 +96,8 @@ Dependencies
    it would be great to keep it this way.
 
  - Python scripts within `test_data/` can use whatever dependencies they need,
-   so long as the `.onnx` file they produce is already included.
+   because the `.onnx` file they produce should already be included and end
+   users should not be required to run them.
 
 
 C-Specific Stuff
