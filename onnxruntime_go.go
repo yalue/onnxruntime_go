@@ -246,21 +246,30 @@ func (s Shape) Equals(other Shape) bool {
 }
 
 // This wraps internal implementation details to avoid exposing them to users
-// via the ArbitraryTensor interface.
-type TensorInternalData struct {
+// via the Value interface.
+type ValueInternalData struct {
 	ortValue *C.OrtValue
 }
 
-// An interface for managing tensors where we don't care about accessing the
-// underlying data slice. All typed tensors will support this interface,
-// regardless of the underlying data type.
-type ArbitraryTensor interface {
+// An interface for managing tensors or other onnxruntime values where we don't
+// necessarily need to access the underlying data slice. All typed tensors will
+// support this interface regardless of the underlying data type.
+type Value interface {
 	DataType() C.ONNXTensorElementDataType
 	GetShape() Shape
 	Destroy() error
-	GetInternals() *TensorInternalData
+	GetInternals() *ValueInternalData
 	ZeroContents()
+	GetONNXType() ONNXType
 }
+
+// This type alias is included to avoid breaking older code, where the inputs
+// and outputs to session.Run() were ArbitraryTensors rather than Values.
+type ArbitraryTensor = Value
+
+// As with the ArbitraryTensor type, this type alias only exists to facilitate
+// renaming an old type without breaking existing code.
+type TensorInternalData = ValueInternalData
 
 // Used to manage all input and output data for onnxruntime networks. A Tensor
 // always has an associated type and refers to data contained in an underlying
@@ -304,6 +313,12 @@ func (t *Tensor[T]) DataType() C.ONNXTensorElementDataType {
 	return GetTensorElementDataType[T]()
 }
 
+// Always returns ONNXTypeTensor for any Tensor[T] even if the underlying
+// tensor is invalid for some reason.
+func (t *Tensor[_]) GetONNXType() ONNXType {
+	return ONNXTypeTensor
+}
+
 // Returns the shape of the tensor. The returned shape is only a copy;
 // modifying this does *not* change the shape of the underlying tensor.
 // (Modifying the tensor's shape can only be accomplished by Destroying and
@@ -312,8 +327,8 @@ func (t *Tensor[_]) GetShape() Shape {
 	return t.shape.Clone()
 }
 
-func (t *Tensor[_]) GetInternals() *TensorInternalData {
-	return &TensorInternalData{
+func (t *Tensor[_]) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
 		ortValue: t.ortValue,
 	}
 }
@@ -473,11 +488,44 @@ func (t TensorElementDataType) String() string {
 	return fmt.Sprintf("Unknown tensor element data type: %d", int(t))
 }
 
-// This satisfies the ArbitraryTensor interface, but is intended to allow users
-// to provide tensors of types that may not be supported by the generic
-// typed Tensor[T] struct. Instead, CustomDataTensors are backed by a slice of
-// bytes, using a user-provided shape and type from the
-// ONNXTensorElementDataType enum.
+// Wraps the ONNXType enum in C.
+type ONNXType int
+
+const (
+	ONNXTypeUnknown      = C.ONNX_TYPE_UNKNOWN
+	ONNXTypeTensor       = C.ONNX_TYPE_TENSOR
+	ONNXTypeSequence     = C.ONNX_TYPE_SEQUENCE
+	ONNXTypeMap          = C.ONNX_TYPE_MAP
+	ONNXTypeOpaque       = C.ONNX_TYPE_OPAQUE
+	ONNXTypeSparseTensor = C.ONNX_TYPE_SPARSETENSOR
+	ONNXTypeOptional     = C.ONNX_TYPE_OPTIONAL
+)
+
+func (t ONNXType) String() string {
+	switch t {
+	case ONNXTypeUnknown:
+		return "ONNX_TYPE_UNKNOWN"
+	case ONNXTypeTensor:
+		return "ONNX_TYPE_TENSOR"
+	case ONNXTypeSequence:
+		return "ONNX_TYPE_SEQUENCE"
+	case ONNXTypeMap:
+		return "ONNX_TYPE_MAP"
+	case ONNXTypeOpaque:
+		return "ONNX_TYPE_OPAQUE"
+	case ONNXTypeSparseTensor:
+		return "ONNX_TYPE_SPARSE_TENSOR"
+	case ONNXTypeOptional:
+		return "ONNX_TYPE_OPTIONAL"
+	}
+	return fmt.Sprintf("Unknown ONNX type: %d", int(t))
+}
+
+// This satisfies the Value interface, but is intended to allow users to
+// provide tensors of types that may not be supported by the generic typed
+// Tensor[T] struct. Instead, CustomDataTensors are backed by a slice of bytes,
+// using a user-provided shape and type from the ONNXTensorElementDataType
+// enum.
 type CustomDataTensor struct {
 	data     []byte
 	dataType C.ONNXTensorElementDataType
@@ -542,10 +590,16 @@ func (t *CustomDataTensor) GetShape() Shape {
 	return t.shape.Clone()
 }
 
-func (t *CustomDataTensor) GetInternals() *TensorInternalData {
-	return &TensorInternalData{
+func (t *CustomDataTensor) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
 		ortValue: t.ortValue,
 	}
+}
+
+// Always returns ONNXTypeTensor, even if the CustomDataTensor is invalid for
+// some reason.
+func (t *CustomDataTensor) GetONNXType() ONNXType {
+	return ONNXTypeTensor
 }
 
 // Sets all bytes in the data slice to 0.
@@ -1108,7 +1162,7 @@ func createCSession(onnxData []byte, options *SessionOptions) (*C.OrtSession,
 // The same as NewAdvancedSession, but takes a slice of bytes containing the
 // .onnx network rather than a file path.
 func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
-	outputNames []string, inputs, outputs []ArbitraryTensor,
+	outputNames []string, inputs, outputs []Value,
 	options *SessionOptions) (*AdvancedSession, error) {
 	if !IsInitialized() {
 		return nil, NotInitializedError
@@ -1171,7 +1225,7 @@ func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
 // provided SessionOptions pointer is nil, then the new session will use
 // default options.
 func NewAdvancedSession(onnxFilePath string, inputNames, outputNames []string,
-	inputs, outputs []ArbitraryTensor,
+	inputs, outputs []Value,
 	options *SessionOptions) (*AdvancedSession, error) {
 	fileContent, e := os.ReadFile(onnxFilePath)
 	if e != nil {
@@ -1315,7 +1369,8 @@ func getShapeFromInfo(t *C.OrtTensorTypeAndShapeInfo) (Shape, error) {
 	return shape, nil
 }
 
-func createTensorFromOrtValue(v *C.OrtValue) (ArbitraryTensor, error) {
+// TODO: Make createTensorFromOrtValue work for non-Tensor OrtValues.
+func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 	var pInfo *C.OrtTensorTypeAndShapeInfo
 	status := C.GetTensorTypeAndShape(v, &pInfo)
 	if status != nil {
@@ -1374,7 +1429,7 @@ func createTensorFromOrtValue(v *C.OrtValue) (ArbitraryTensor, error) {
 // names specified to NewDynamicAdvancedSession.
 // If a given output is nil, it will be allocated and the slice will be modified
 // to include the new tensor. The new tensor must be freed by calling Destroy on it.
-func (s *DynamicAdvancedSession) Run(inputs, outputs []ArbitraryTensor) error {
+func (s *DynamicAdvancedSession) Run(inputs, outputs []Value) error {
 	if len(inputs) != len(s.s.inputNames) {
 		return fmt.Errorf("The session specified %d input names, but Run() "+
 			"was called with %d input tensors", len(s.s.inputNames),

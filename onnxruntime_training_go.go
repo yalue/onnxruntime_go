@@ -58,6 +58,10 @@ func (t *Scalar[_]) GetInternals() *TensorInternalData {
 	}
 }
 
+func (t *Scalar[_]) GetONNXType() ONNXType {
+	return ONNXTypeTensor
+}
+
 // NewEmptyScalar creates a new scalar of type T.
 func NewEmptyScalar[T TensorData]() (*Scalar[T], error) {
 	var data T
