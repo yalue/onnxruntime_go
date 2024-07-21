@@ -53,6 +53,9 @@ Tests
  - In short, after _every_ change, `go test -v -bench=.` must pass on _every_
    supported platform.
 
+ - Every test failure should be accompanied by a message containing the reason,
+   either using `t.Logf()`, `t.Errorf()`, or `t.Fatalf()`.
+
 
 Adding New Files
 ----------------
