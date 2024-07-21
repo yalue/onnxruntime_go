@@ -192,7 +192,7 @@ func TestTraining(t *testing.T) {
 		path.Join(trainingArtifactsFolder, "training_model.onnx"),
 		path.Join(trainingArtifactsFolder, "eval_model.onnx"),
 		path.Join(trainingArtifactsFolder, "optimizer_model.onnx"),
-		[]ArbitraryTensor{batchInputTensor, batchTargetTensor}, []ArbitraryTensor{lossScalar},
+		[]Value{batchInputTensor, batchTargetTensor}, []Value{lossScalar},
 		nil)
 
 	if errorSessionCreation != nil {
@@ -200,7 +200,7 @@ func TestTraining(t *testing.T) {
 	}
 
 	// cleanup after test run
-	defer func(session *TrainingSession, tensors []ArbitraryTensor) {
+	defer func(session *TrainingSession, tensors []Value) {
 		var errs []error
 		errs = append(errs, session.Destroy())
 		for _, t := range tensors {
@@ -209,7 +209,7 @@ func TestTraining(t *testing.T) {
 		if e := errors.Join(errs...); e != nil {
 			t.Fatalf("cleanup of test failed with error: %v", e)
 		}
-	}(trainingSession, []ArbitraryTensor{batchInputTensor, batchTargetTensor, lossScalar})
+	}(trainingSession, []Value{batchInputTensor, batchTargetTensor, lossScalar})
 
 	losses := []float32{}
 	epochs := 100
@@ -300,7 +300,7 @@ func TestTraining(t *testing.T) {
 	// (we care about correctness more than generalization here)
 	session, err := NewAdvancedSession(path.Join("test_data", "training_test", "final_inference.onnx"),
 		[]string{"input"}, []string{"output"},
-		[]ArbitraryTensor{batchInputTensor}, []ArbitraryTensor{batchTargetTensor}, nil)
+		[]Value{batchInputTensor}, []Value{batchTargetTensor}, nil)
 
 	if err != nil {
 		t.Fatalf("creation of inference session failed with error: %v", err)

@@ -304,8 +304,8 @@ func TestEmptyONNXFiles(t *testing.T) {
 	defer CleanupRuntime(t)
 	inputNames := []string{"whatever"}
 	outputNames := []string{"whatever_out"}
-	inputTensors := []ArbitraryTensor{nil}
-	outputTensors := []ArbitraryTensor{nil}
+	inputTensors := []Value{nil}
+	outputTensors := []Value{nil}
 	_, e := NewAdvancedSessionWithONNXData([]byte{}, inputNames, outputNames,
 		inputTensors, outputTensors, nil)
 	if e == nil {
@@ -514,10 +514,11 @@ func TestDifferentInputOutputTypes(t *testing.T) {
 	outputB := newTestTensor[int64](t, NewShape(1, 1, 1))
 	defer outputB.Destroy()
 
+	// Decided to toss in an "ArbitraryTensor" here to ensure that it remains
+	// compatible with Value in the future.
 	session, e := NewAdvancedSession("test_data/example_multitype.onnx",
 		[]string{"InputA", "InputB"}, []string{"OutputA", "OutputB"},
-		[]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{outputA, outputB}, nil)
+		[]Value{inputA, inputB}, []ArbitraryTensor{outputA, outputB}, nil)
 	if e != nil {
 		t.Fatalf("Failed creating session: %s\n", e)
 	}
@@ -569,8 +570,8 @@ func TestDynamicDifferentInputOutputTypes(t *testing.T) {
 		aInputs[i], bInputs[i] = randomMultitypeInputs(t, 999+int64(i))
 		aOutputs[i] = newTestTensor[int16](t, NewShape(1, 2, 2))
 		bOutputs[i] = newTestTensor[int64](t, NewShape(1, 1, 1))
-		e = session.Run([]ArbitraryTensor{aInputs[i], bInputs[i]},
-			[]ArbitraryTensor{aOutputs[i], bOutputs[i]})
+		e = session.Run([]Value{aInputs[i], bInputs[i]},
+			[]Value{aOutputs[i], bOutputs[i]})
 		if e != nil {
 			t.Fatalf("Failed running session for test %d: %s\n", i, e)
 		}
@@ -600,8 +601,8 @@ func TestDynamicAllocatedOutputTensor(t *testing.T) {
 
 	// Actually create the inputs and run the tests.
 	aInput, bInput := randomMultitypeInputs(t, 999)
-	var outputs [2]ArbitraryTensor
-	e = session.Run([]ArbitraryTensor{aInput, bInput}, outputs[:])
+	var outputs [2]Value
+	e = session.Run([]Value{aInput, bInput}, outputs[:])
 	if e != nil {
 		t.Fatalf("Failed running session: %s\n", e)
 	}
@@ -713,8 +714,8 @@ func TestDynamicInputOutputAxes(t *testing.T) {
 		}
 
 		// Run the session; make onnxruntime allocate the output tensor for us.
-		outputs := []ArbitraryTensor{nil}
-		e = session.Run([]ArbitraryTensor{input}, outputs)
+		outputs := []Value{nil}
+		e = session.Run([]Value{input}, outputs)
 		if e != nil {
 			input.Destroy()
 			t.Fatalf("Error running the session with batch size %d: %s\n",
@@ -749,16 +750,15 @@ func TestWrongInputs(t *testing.T) {
 	// input or output.
 	wrongTypeTensor := newTestTensor[float32](t, NewShape(1, 2, 2))
 	defer wrongTypeTensor.Destroy()
-	e = session.Run([]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{wrongTypeTensor, outputB})
+	e = session.Run([]Value{inputA, inputB}, []Value{wrongTypeTensor, outputB})
 	if e == nil {
 		t.Fatalf("Didn't get expected error when passing a float32 tensor in" +
 			" place of an int16 output tensor.\n")
 	}
 	t.Logf("Got expected error when passing a float32 tensor in place of an "+
 		"int16 output tensor: %s\n", e)
-	e = session.Run([]ArbitraryTensor{inputA, wrongTypeTensor},
-		[]ArbitraryTensor{outputA, outputB})
+	e = session.Run([]Value{inputA, wrongTypeTensor},
+		[]Value{outputA, outputB})
 	if e == nil {
 		t.Fatalf("Didn't get expected error when passing a float32 tensor in" +
 			" place of a float64 input tensor.\n")
@@ -771,8 +771,8 @@ func TestWrongInputs(t *testing.T) {
 	// output.
 	wrongShapeInput := newTestTensor[uint8](t, NewShape(22))
 	defer wrongShapeInput.Destroy()
-	e = session.Run([]ArbitraryTensor{wrongShapeInput, inputB},
-		[]ArbitraryTensor{outputA, outputB})
+	e = session.Run([]Value{wrongShapeInput, inputB},
+		[]Value{outputA, outputB})
 	if e == nil {
 		t.Fatalf("Didn't get expected error when running with an incorrectly" +
 			" shaped input.\n")
@@ -781,8 +781,8 @@ func TestWrongInputs(t *testing.T) {
 		"input: %s\n", e)
 	wrongShapeOutput := newTestTensor[int64](t, NewShape(1, 1, 1, 1, 1, 1))
 	defer wrongShapeOutput.Destroy()
-	e = session.Run([]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{outputA, wrongShapeOutput})
+	e = session.Run([]Value{inputA, inputB},
+		[]Value{outputA, wrongShapeOutput})
 	if e == nil {
 		t.Fatalf("Didn't get expected error when running with an incorrectly" +
 			" shaped output.\n")
@@ -790,8 +790,7 @@ func TestWrongInputs(t *testing.T) {
 	t.Logf("Got expected error when running with an incorrectly shaped "+
 		"output: %s\n", e)
 
-	e = session.Run([]ArbitraryTensor{inputA, inputB},
-		[]ArbitraryTensor{outputA, outputB})
+	e = session.Run([]Value{inputA, inputB}, []Value{outputA, outputB})
 	if e != nil {
 		t.Fatalf("Got error attempting to (correctly) Run a session after "+
 			"attempting to use incorrect inputs or outputs: %s\n", e)
@@ -1075,7 +1074,7 @@ func TestFloat16Network(t *testing.T) {
 
 	session, e := NewAdvancedSession("test_data/example_float16.onnx",
 		[]string{"InputA"}, []string{"OutputA"},
-		[]ArbitraryTensor{inputTensor}, []ArbitraryTensor{outputTensor}, nil)
+		[]Value{inputTensor}, []Value{outputTensor}, nil)
 	if e != nil {
 		t.Fatalf("Error creating session: %s\n", e)
 	}
@@ -1123,8 +1122,8 @@ func testBigSessionWithOptions(t *testing.T, options *SessionOptions) {
 	defer input.Destroy()
 	defer output.Destroy()
 	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, options)
+		[]string{"Input"}, []string{"Output"},
+		[]Value{input}, []Value{output}, options)
 	if e != nil {
 		t.Fatalf("Error creating session: %s\n", e)
 	}
@@ -1145,8 +1144,8 @@ func benchmarkBigSessionWithOptions(b *testing.B, options *SessionOptions) {
 	defer input.Destroy()
 	defer output.Destroy()
 	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"}, []ArbitraryTensor{input},
-		[]ArbitraryTensor{output}, options)
+		[]string{"Input"}, []string{"Output"},
+		[]Value{input}, []Value{output}, options)
 	if e != nil {
 		b.Fatalf("Error creating session: %s\n", e)
 	}

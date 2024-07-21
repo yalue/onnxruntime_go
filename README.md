@@ -133,7 +133,7 @@ func main() {
 
     session, err := ort.NewAdvancedSession("path/to/network.onnx",
         []string{"Input 1 Name"}, []string{"Output 1 Name"},
-        []ort.ArbitraryTensor{inputTensor}, []ort.ArbitraryTensor{outputTensor}, nil)
+        []ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
     defer session.Destroy()
 
     // Calling Run() will run the network, reading the current contents of the
