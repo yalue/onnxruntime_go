@@ -289,6 +289,10 @@ void ReleaseTypeInfo(OrtTypeInfo *o) {
   ort_api->ReleaseTypeInfo(o);
 }
 
+OrtStatus *GetONNXTypeFromTypeInfo(OrtTypeInfo *info, enum ONNXType *out) {
+  return ort_api->GetOnnxTypeFromTypeInfo(info, out);
+}
+
 OrtStatus *CastTypeInfoToTensorInfo(OrtTypeInfo *type_info,
   OrtTensorTypeAndShapeInfo **out) {
   return ort_api->CastTypeInfoToTensorInfo(type_info,
@@ -357,6 +361,28 @@ OrtStatus *ModelMetadataGetCustomMetadataMapKeys(OrtModelMetadata *m,
 
 OrtStatus *ModelMetadataGetVersion(OrtModelMetadata *m, int64_t *version) {
   return ort_api->ModelMetadataGetVersion(m, version);
+}
+
+OrtStatus *GetValue(OrtValue *container, int index, OrtValue **dst) {
+  OrtAllocator *allocator = NULL;
+  OrtStatus *status = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  return ort_api->GetValue(container, index, allocator, dst);
+}
+
+OrtStatus *GetValueType(OrtValue *v, enum ONNXType *out) {
+  return ort_api->GetValueType(v, out);
+}
+
+OrtStatus *GetValueCount(OrtValue *v, size_t *out) {
+  return ort_api->GetValueCount(v, out);
+}
+
+OrtStatus *CreateOrtValue(OrtValue **in, size_t num_values,
+  enum ONNXType value_type, OrtValue **out) {
+  return ort_api->CreateValue((const OrtValue* const*) in, num_values,
+    value_type, out);
 }
 
 // TRAINING API WRAPPER
@@ -504,3 +530,4 @@ void ReleaseOrtTrainingSession(OrtTrainingSession *session) {
 void ReleaseCheckpointState(OrtCheckpointState *checkpoint) {
   ort_training_api->ReleaseCheckpointState(checkpoint);
 }
+

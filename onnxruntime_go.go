@@ -488,6 +488,131 @@ func (t TensorElementDataType) String() string {
 	return fmt.Sprintf("Unknown tensor element data type: %d", int(t))
 }
 
+// This wraps an ONNX_TYPE_SEQUENCE OrtValue. Individual elements must be
+// accessed using GetValue. Satisfies the Value interface, though Tensor-
+// related functions such as ZeroContents() may be no-ops.
+type Sequence struct {
+	ortValue *C.OrtValue
+	// We'll stash the number of values in the sequence here, so we don't need
+	// to call C.GetValueCount more than once.
+	valueCount int64
+}
+
+// Creates a new ONNX sequence with the given contents. The returned Sequence
+// must be Destroyed by the caller when no longer needed. Destroying the
+// Sequence created by this function does _not_ destroy the Values it contains,
+// so the caller is still responsible for destroying them as well.
+//
+// The contents of a sequence are subject to additional constraints. I can't
+// find mention of some of these in the C API docs, but they are enforced by
+// the onnxruntime API. Notably: all elements of the sequence must have the
+// same type, and all elements must be either maps or tensors. Finally, the
+// sequence must contain at least one element, and none of the elements may be
+// nil. There may be other constraints that I am unaware of, as well.
+func NewSequence(contents []Value) (*Sequence, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	length := int64(len(contents))
+	if length == 0 {
+		return nil, fmt.Errorf("Sequences must contain at least 1 element")
+	}
+	ortValues := make([]*C.OrtValue, length)
+	for i, v := range contents {
+		if v == nil {
+			// I don't actually know if NULL OrtValue pointers are allowed in
+			// sequences, but I'm assuming not.
+			return nil, fmt.Errorf("Sequences must not contain nil (index "+
+				"%d was nil)", i)
+		}
+		ortValues[i] = v.GetInternals().ortValue
+	}
+
+	// Avoid dereferencing ortValues[0] if the list is empty.
+	var valuesPtr **C.OrtValue
+	if length > 0 {
+		valuesPtr = &(ortValues[0])
+	}
+	var sequence *C.OrtValue
+	status := C.CreateOrtValue(valuesPtr, C.size_t(length),
+		C.ONNX_TYPE_SEQUENCE, &sequence)
+	if status != nil {
+		return nil, fmt.Errorf("Error creating ORT sequence: %s",
+			statusToError(status))
+	}
+	return &Sequence{
+		ortValue:   sequence,
+		valueCount: length,
+	}, nil
+}
+
+func (s *Sequence) Destroy() error {
+	C.ReleaseOrtValue(s.ortValue)
+	s.ortValue = nil
+	s.valueCount = 0
+	return nil
+}
+
+// Returns the number of elements in the sequence.
+func (s *Sequence) GetValueCount() int64 {
+	return s.valueCount
+}
+
+// This returns a 1-dimensional Shape containing a single element: the number
+// of elements the sequence. Typically, Sequence users should prefer
+// GetValueCount() to this function, since this function only exists to
+// maintain compatibility with the Value interface.
+func (s *Sequence) GetShape() Shape {
+	return NewShape(s.valueCount)
+}
+
+func (s *Sequence) GetONNXType() ONNXType {
+	return ONNXTypeSequence
+}
+
+// This function is meaningless for a Sequence and shouldn't be used. The
+// return value is always TENSOR_ELEMENT_DATA_TYPE_UNDEFINED for now, but this
+// may change in the future. This function is only present for compatibility
+// with the Value interface and should not be relied on for sequences.
+func (s *Sequence) DataType() C.ONNXTensorElementDataType {
+	return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED
+}
+
+// This function does nothing for a Sequence, and is only present for
+// compatibility with the Value interface.
+func (s *Sequence) ZeroContents() {
+}
+
+func (s *Sequence) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
+		ortValue: s.ortValue,
+	}
+}
+
+// Returns the value at the given index in the sequence. Will return an error
+// if the index exceeds the number of elements in the sequence, or for any
+// other reason.
+//
+// IMPORTANT: The Value returned by this function must be destroyed by the
+// caller when it is no longer needed. This is because the GetValue C API for
+// sequences internally allocates a new OrtValue.  Put another way, this does
+// _not_ return the same Value instance that was provided to NewSequence, even
+// though, if it's a tensor, it should still refer to the same underlying data
+// slice.
+func (s *Sequence) GetValue(index int64) (Value, error) {
+	if (index < 0) || (index >= s.valueCount) {
+		return nil, fmt.Errorf("Invalid index (%d) into sequence of length %d",
+			index, s.valueCount)
+	}
+	var result *C.OrtValue
+	status := C.GetValue(s.ortValue, C.int(index), &result)
+	if status != nil {
+		return nil, fmt.Errorf("Error getting value of index %d: %s", index,
+			statusToError(status))
+	}
+	return createGoValueFromOrtValue(result)
+}
+
 // Wraps the ONNXType enum in C.
 type ONNXType int
 
@@ -1369,7 +1494,53 @@ func getShapeFromInfo(t *C.OrtTensorTypeAndShapeInfo) (Shape, error) {
 	return shape, nil
 }
 
-// TODO: Make createTensorFromOrtValue work for non-Tensor OrtValues.
+// Returns the ONNXType associated with a C OrtValue.
+func getValueType(v *C.OrtValue) (ONNXType, error) {
+	var t C.enum_ONNXType
+	status := C.GetValueType(v, &t)
+	if status != nil {
+		return ONNXTypeUnknown, fmt.Errorf("Error looking up type for "+
+			"OrtValue: %s", statusToError(status))
+	}
+	return ONNXType(t), nil
+}
+
+// Returns the "count" associated with an OrtValue. Mostly useful for
+// sequences. Should always return 2 for a map. Not sure what it returns for
+// Tensors, but that shouldn't matter.
+func getValueCount(v *C.OrtValue) (int64, error) {
+	var size C.size_t
+	status := C.GetValueCount(v, &size)
+	if status != nil {
+		return 0, fmt.Errorf("Error getting non tensor count for OrtValue: %s",
+			statusToError(status))
+	}
+	return int64(size), nil
+}
+
+// Takes a OrtValue and returns an appropriate Go Value wrapping it. Does not
+// copy the value. This function assumes that v will be destroyed later when
+// the returned go Value is destroyed.
+func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
+	// TODO: How to handle v == nil? Is it even possible to get nil here?
+	valueType, e := getValueType(v)
+	if e != nil {
+		return nil, e
+	}
+	switch valueType {
+	case ONNXTypeTensor:
+		return createTensorFromOrtValue(v)
+	case ONNXTypeSequence:
+		return createSequenceFromOrtValue(v)
+	default:
+		break
+	}
+	return nil, fmt.Errorf("It is currently not supported to create a Go "+
+		"value from OrtValues with ONNXType = %s", valueType)
+}
+
+// Must only be called if v is known to be of type ONNXTensor. Returns a Tensor
+// wrapping v with the correct Go type.
 func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 	var pInfo *C.OrtTensorTypeAndShapeInfo
 	status := C.GetTensorTypeAndShape(v, &pInfo)
@@ -1424,11 +1595,24 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 	}
 }
 
+// Must only be called if v is already known to be an ONNXTypeSequence. Returns
+// a Sequence go type wrapping v.
+func createSequenceFromOrtValue(v *C.OrtValue) (Value, error) {
+	length, e := getValueCount(v)
+	if e != nil {
+		return nil, fmt.Errorf("Error determining sequence length: %w", e)
+	}
+	return &Sequence{
+		ortValue:   v,
+		valueCount: length,
+	}, nil
+}
+
 // Runs the network on the given input and output tensors. The number of input
 // and output tensors must match the number (and order) of the input and output
-// names specified to NewDynamicAdvancedSession.
-// If a given output is nil, it will be allocated and the slice will be modified
-// to include the new tensor. The new tensor must be freed by calling Destroy on it.
+// names specified to NewDynamicAdvancedSession. If a given output is nil, it
+// will be allocated and the slice will be modified to include the new Value.
+// Any new Value allocated in this way must be freed by calling Destroy on it.
 func (s *DynamicAdvancedSession) Run(inputs, outputs []Value) error {
 	if len(inputs) != len(s.s.inputNames) {
 		return fmt.Errorf("The session specified %d input names, but Run() "+
@@ -1446,23 +1630,28 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []Value) error {
 	}
 	outputValues := make([]*C.OrtValue, len(outputs))
 	for i, v := range outputs {
-		if v != nil {
-			outputValues[i] = v.GetInternals().ortValue
+		if v == nil {
+			// Leave any output that needs to be allocated as nil.
+			continue
 		}
+		outputValues[i] = v.GetInternals().ortValue
 	}
+
 	status := C.RunOrtSession(s.s.ortSession, &inputValues[0],
 		&s.s.inputNames[0], C.int(len(inputs)), &outputValues[0],
 		&s.s.outputNames[0], C.int(len(outputs)))
 	if status != nil {
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
+	// Convert any automatically-allocated output to a go Value.
 	for i, v := range outputs {
-		if v == nil {
-			var err error
-			outputs[i], err = createTensorFromOrtValue(outputValues[i])
-			if err != nil {
-				return fmt.Errorf("Error creating tensor from ort: %w", err)
-			}
+		if v != nil {
+			continue
+		}
+		var err error
+		outputs[i], err = createTensorFromOrtValue(outputValues[i])
+		if err != nil {
+			return fmt.Errorf("Error creating tensor from ort: %w", err)
 		}
 	}
 	return nil
@@ -1480,22 +1669,65 @@ func (s *DynamicAdvancedSession) GetModelMetadata() (*ModelMetadata, error) {
 type InputOutputInfo struct {
 	// The name of the input or output
 	Name string
-	// The input or output's dimensions
+	// The higher-level "type" of the output; whether it's a tensor, sequence,
+	// map, etc.
+	OrtValueType ONNXType
+	// The input or output's dimensions, if it's a tensor. This should be
+	// ignored for non-tensor types.
 	Dimensions Shape
-	// The input or output's data type
+	// The type of element in the input or output, if it's a tensor. This
+	// should be ignored for non-tensor types.
 	DataType TensorElementDataType
 }
 
 func (n *InputOutputInfo) String() string {
-	return fmt.Sprintf("\"%s\": %s, %s", n.Name, n.Dimensions, n.DataType)
+	switch n.OrtValueType {
+	case ONNXTypeUnknown:
+		return fmt.Sprintf("Unknown ONNX type: %s", n.Name)
+	case ONNXTypeTensor:
+		return fmt.Sprintf("Tensor \"%s\": %s, %s", n.Name, n.Dimensions,
+			n.DataType)
+	case ONNXTypeSequence:
+		return fmt.Sprintf("Sequence \"%s\"", n.Name)
+	case ONNXTypeMap:
+		return fmt.Sprintf("Map \"%s\"", n.Name)
+	case ONNXTypeOpaque:
+		return fmt.Sprintf("Opaque \"%s\"", n.Name)
+	case ONNXTypeSparseTensor:
+		return fmt.Sprintf("Sparse tensor \"%s\": dense shape %s, %s",
+			n.Name, n.Dimensions, n.DataType)
+	case ONNXTypeOptional:
+		return fmt.Sprintf("Optional \"%s\"", n.Name)
+	default:
+		break
+	}
+	// We'll use the ONNXType String() output if we don't know the type.
+	return fmt.Sprintf("%s: \"%s\"", n.OrtValueType, n.Name)
 }
 
-// Sets o.Dimensions and o.DataType from the contents of t.
+// Sets o.OrtValueType, o.DataType, and o.Dimensions from the contents of t.
 func (o *InputOutputInfo) fillFromTypeInfo(t *C.OrtTypeInfo) error {
+	var onnxType C.enum_ONNXType
+	status := C.GetONNXTypeFromTypeInfo(t, &onnxType)
+	if status != nil {
+		return fmt.Errorf("Error getting ONNX type: %s", statusToError(status))
+	}
+	o.OrtValueType = ONNXType(onnxType)
+	o.Dimensions = nil
+	o.DataType = TensorElementDataTypeUndefined
+
+	// We only fill in element type and dimensions if we're dealing with a
+	// tensor of some sort.
+	isTensorType := (o.OrtValueType == ONNXTypeTensor) ||
+		(o.OrtValueType == ONNXTypeSparseTensor)
+	if !isTensorType {
+		return nil
+	}
+
 	// OrtTensorTypeAndShapeInfo pointers should *not* be released if they're
 	// obtained via CastTypeInfoToTensorInfo.
 	var typeAndShapeInfo *C.OrtTensorTypeAndShapeInfo
-	status := C.CastTypeInfoToTensorInfo(t, &typeAndShapeInfo)
+	status = C.CastTypeInfoToTensorInfo(t, &typeAndShapeInfo)
 	if status != nil {
 		return fmt.Errorf("Error getting type and shape info: %w",
 			statusToError(status))

@@ -198,6 +198,9 @@ OrtStatus *SessionGetOutputTypeInfo(OrtSession *session, size_t i,
 OrtStatus *CastTypeInfoToTensorInfo(OrtTypeInfo *type_info,
   OrtTensorTypeAndShapeInfo **out);
 
+// Wraps ort_api->GetOnnxTypeFromTypeInfo.
+OrtStatus *GetONNXTypeFromTypeInfo(OrtTypeInfo *info, enum ONNXType *out);
+
 // Wraps ort_api->FreeTypeInfo.
 void ReleaseTypeInfo(OrtTypeInfo *o);
 
@@ -232,6 +235,19 @@ OrtStatus *ModelMetadataGetCustomMetadataMapKeys(OrtModelMetadata *m,
 // Wraps ort_api->ModelMetadataGetVersion.
 OrtStatus *ModelMetadataGetVersion(OrtModelMetadata *m, int64_t *version);
 
+// Wraps ort_api->GetValue. Uses the default allocator.
+OrtStatus *GetValue(OrtValue *container, int index, OrtValue **dst);
+
+// Wraps ort_api->GetValueType.
+OrtStatus *GetValueType(OrtValue *v, enum ONNXType *out);
+
+// Wraps ort_api->GetValueCount.
+OrtStatus *GetValueCount(OrtValue *v, size_t *out);
+
+// Wraps ort_api->CreateValue to create a map or a sequence.
+OrtStatus *CreateOrtValue(OrtValue **in, size_t num_values,
+  enum ONNXType value_type, OrtValue **out);
+
 // TRAINING API WRAPPER
 
 void SetTrainingApi();
@@ -241,11 +257,12 @@ int IsTrainingApiSupported();
 
 // Wraps ort_training_api->CreateSessionFromBuffer.
 // Creates and ORT checkpoint from the checkpoint data.
-OrtStatus *CreateCheckpoint(void *checkpoint_data, size_t checkpoint_data_length, OrtCheckpointState **out);
+OrtStatus *CreateCheckpoint(void *checkpoint_data,
+  size_t checkpoint_data_length, OrtCheckpointState **out);
 
-// Wraps ort_training_api->CreateTrainingSessionFromBuffer.
-// Creates an ORT training session using the given models and checkpoint. 
-// The given options pointer may be NULL; if it is, then we'll use default options.
+// Wraps ort_training_api->CreateTrainingSessionFromBuffer. Creates an ORT
+// training session using the given models and checkpoint. The given options
+// pointer may be NULL; if it is, then we'll use default options.
 OrtStatus *CreateTrainingSessionFromBuffer(OrtCheckpointState *checkpoint_state,
   void *training_model_data, size_t training_model_data_length,
   void *eval_model_data, size_t eval_model_data_length,
