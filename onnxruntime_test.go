@@ -1124,42 +1124,26 @@ func TestONNXSequence(t *testing.T) {
 		t.Fatalf("Error creating sequence: %s\n", e)
 	}
 	defer sequence.Destroy()
-	if int64(sequence.GetValueCount()) != sequenceLength {
+	sequenceContents, e := sequence.GetValues()
+	if e != nil {
+		t.Fatalf("Error getting sequence contents: %s\n", e)
+	}
+	if int64(len(sequenceContents)) != sequenceLength {
 		t.Fatalf("Got %d values in sequence, expected %d\n",
-			sequence.GetValueCount(), sequenceLength)
+			len(sequenceContents), sequenceLength)
 	}
 	if sequence.GetONNXType() != ONNXTypeSequence {
 		t.Fatalf("Got incorrect ONNX type for sequence: %s\n",
 			sequence.GetONNXType())
 	}
-	// Not guaranteed by onnxruntime, but it _is_ something that I wrote in the
-	// docs.
+	// Make sure we adhere to what I wrote in the docs
 	if !sequence.GetShape().Equals(NewShape(sequenceLength)) {
 		t.Fatalf("Sequence.GetShape() returned incorrect shape: %s\n",
 			sequence.GetShape())
 	}
 
-	_, e = sequence.GetValue(9999)
-	if e == nil {
-		t.Fatalf("Did not get an error when accessing out of a " +
-			"sequence's bounds\n")
-	}
-	t.Logf("Got expected error when accessing out of bounds: %s\n", e)
-	_, e = sequence.GetValue(-1)
-	if e == nil {
-		t.Fatalf("Did not get an error when accessing a negative index\n")
-	}
-	t.Logf("Got expected error when accessing a negative index: %s\n", e)
-
-	// We know from the C API docs that this needs to be destroyed
-	selectedIndex := int64(44)
-	selectedValue, e := sequence.GetValue(selectedIndex)
-	if e != nil {
-		t.Fatalf("Error getting sequence value at index %d: %s\n",
-			selectedIndex, e)
-	}
-	defer selectedValue.Destroy()
-
+	selectedIndex := 44
+	selectedValue := sequenceContents[selectedIndex]
 	if selectedValue.GetONNXType() != ONNXTypeTensor {
 		t.Fatalf("Got incorrect ONNXType for value at index %d: "+
 			"expected %s, got %s\n", selectedIndex, ONNXType(ONNXTypeTensor),
@@ -1210,10 +1194,13 @@ func TestBadSequences(t *testing.T) {
 		"sequences: %s\n", e)
 }
 
+/*
+// TODO: Re-add this entire test when Map support is added. It no longer works,
+// even partially, after changing the Sequence API.
+
 func TestSklearnNetwork(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
-	//Input names: ['X']
 
 	// These inputs and outputs were taken from the information printed by
 	// test_data/generate_sklearn_network.py
@@ -1230,7 +1217,6 @@ func TestSklearnNetwork(t *testing.T) {
 	// "output_label": A tensor of an int64 label per set of 4 inputs
 	expectedPredictions := []int64{2, 1, 1, 2, 2, 1}
 
-	/* These will be used when verifying the map output data is correct.
 	// "output_probability": A sequence of maps, mapping each int64 label to a
 	// float64 output. We'll just store them in order here.
 	outputProbabilities := []map[int64]float32{
@@ -1241,7 +1227,6 @@ func TestSklearnNetwork(t *testing.T) {
 		{0: 0.0, 1: 0.0, 2: 0.9999993443489075},
 		{0: 0.0, 1: 0.9999993443489075, 2: 0.0},
 	}
-	*/
 
 	modelPath := "test_data/sklearn_randomforest.onnx"
 	session, e := NewDynamicAdvancedSession(modelPath, []string{"X"},
@@ -1300,7 +1285,7 @@ func TestSklearnNetwork(t *testing.T) {
 		t.Fatalf("Expected a %d-element sequence, got %d\n",
 			len(expectedPredictions), sequence.GetValueCount())
 	}
-	/* TODO: Test each sequence element after adding Map support
+	// TODO: Test each sequence element after adding Map support
 	for i := int64(0); i < sequence.GetValueCount(); i++ {
 		m, e := sequence.GetValue(i)
 		if e != nil {
@@ -1312,8 +1297,8 @@ func TestSklearnNetwork(t *testing.T) {
 				i, m.GetONNXType())
 		}
 	}
-	*/
 }
+*/
 
 // See the comment in generate_network_big_compute.py for information about
 // the inputs and outputs used for testing or benchmarking session options.

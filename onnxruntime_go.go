@@ -493,15 +493,28 @@ func (t TensorElementDataType) String() string {
 // related functions such as ZeroContents() may be no-ops.
 type Sequence struct {
 	ortValue *C.OrtValue
-	// We'll stash the number of values in the sequence here, so we don't need
-	// to call C.GetValueCount more than once.
-	valueCount int64
+	// We'll stash the values in the sequence here, so we don't need to look
+	// them up, and so that users don't need to remember to free them.
+	contents []Value
+}
+
+// Returns the value at the given index in the sequence. Used internally when
+// initializing a go Sequence object.
+func getSequenceValue(ortSequence *C.OrtValue, index int64) (Value, error) {
+	var result *C.OrtValue
+	status := C.GetValue(ortSequence, C.int(index), &result)
+	if status != nil {
+		return nil, fmt.Errorf("Error getting value of index %d: %s", index,
+			statusToError(status))
+	}
+	return createGoValueFromOrtValue(result)
 }
 
 // Creates a new ONNX sequence with the given contents. The returned Sequence
 // must be Destroyed by the caller when no longer needed. Destroying the
-// Sequence created by this function does _not_ destroy the Values it contains,
-// so the caller is still responsible for destroying them as well.
+// Sequence created by this function does _not_ destroy the Values it was
+// created with, so the caller is still responsible for destroying them
+// as well.
 //
 // The contents of a sequence are subject to additional constraints. I can't
 // find mention of some of these in the C API docs, but they are enforced by
@@ -540,30 +553,62 @@ func NewSequence(contents []Value) (*Sequence, error) {
 		return nil, fmt.Errorf("Error creating ORT sequence: %s",
 			statusToError(status))
 	}
+
+	// Next, get each OrtValue from the sequence itself.
+	internalValues := make([]Value, length)
+	var e error
+	for i := int64(0); i < length; i++ {
+		internalValues[i], e = getSequenceValue(sequence, i)
+		if e != nil {
+			// Clean up any go Values that were created before this error.
+			for j := int64(0); j < i; j++ {
+				internalValues[j].Destroy()
+			}
+			C.ReleaseOrtValue(sequence)
+			return nil, fmt.Errorf("Error getting element %d of sequence: %w",
+				i, e)
+		}
+	}
+
 	return &Sequence{
-		ortValue:   sequence,
-		valueCount: length,
+		ortValue: sequence,
+		contents: internalValues,
 	}, nil
+}
+
+// Returns the list of values in the sequence. Each of these values should
+// _not_ be Destroy()'ed by the caller, they will be automatically destroyed
+// upon calling Destroy() on the sequence. If this sequence was created via
+// NewSequence, these are not the same Values that the sequence was created
+// with, though if they are tensors they should still refer to the same
+// underlying data.
+func (s *Sequence) GetValues() ([]Value, error) {
+	return s.contents, nil
 }
 
 func (s *Sequence) Destroy() error {
 	C.ReleaseOrtValue(s.ortValue)
+	var e error
+	for _, v := range s.contents {
+		if v != nil {
+			// Just return the first error if any of these returns an error.
+			e2 := v.Destroy()
+			if e2 != nil {
+				e = e2
+			}
+		}
+	}
 	s.ortValue = nil
-	s.valueCount = 0
-	return nil
-}
-
-// Returns the number of elements in the sequence.
-func (s *Sequence) GetValueCount() int64 {
-	return s.valueCount
+	s.contents = nil
+	return e
 }
 
 // This returns a 1-dimensional Shape containing a single element: the number
-// of elements the sequence. Typically, Sequence users should prefer
-// GetValueCount() to this function, since this function only exists to
-// maintain compatibility with the Value interface.
+// of elements the sequence. Typically, Sequence users should prefer calling
+// len(s.GetValues()) over this function. This function only exists to maintain
+// compatibility with the Value interface.
 func (s *Sequence) GetShape() Shape {
-	return NewShape(s.valueCount)
+	return NewShape(int64(len(s.contents)))
 }
 
 func (s *Sequence) GetONNXType() ONNXType {
@@ -587,30 +632,6 @@ func (s *Sequence) GetInternals() *ValueInternalData {
 	return &ValueInternalData{
 		ortValue: s.ortValue,
 	}
-}
-
-// Returns the value at the given index in the sequence. Will return an error
-// if the index exceeds the number of elements in the sequence, or for any
-// other reason.
-//
-// IMPORTANT: The Value returned by this function must be destroyed by the
-// caller when it is no longer needed. This is because the GetValue C API for
-// sequences internally allocates a new OrtValue.  Put another way, this does
-// _not_ return the same Value instance that was provided to NewSequence, even
-// though, if it's a tensor, it should still refer to the same underlying data
-// slice.
-func (s *Sequence) GetValue(index int64) (Value, error) {
-	if (index < 0) || (index >= s.valueCount) {
-		return nil, fmt.Errorf("Invalid index (%d) into sequence of length %d",
-			index, s.valueCount)
-	}
-	var result *C.OrtValue
-	status := C.GetValue(s.ortValue, C.int(index), &result)
-	if status != nil {
-		return nil, fmt.Errorf("Error getting value of index %d: %s", index,
-			statusToError(status))
-	}
-	return createGoValueFromOrtValue(result)
 }
 
 // Wraps the ONNXType enum in C.
@@ -1602,9 +1623,24 @@ func createSequenceFromOrtValue(v *C.OrtValue) (Value, error) {
 	if e != nil {
 		return nil, fmt.Errorf("Error determining sequence length: %w", e)
 	}
+
+	// Retrieve all of the sequence's contents as Go values, too.
+	internalValues := make([]Value, length)
+	for i := range internalValues {
+		internalValues[i], e = getSequenceValue(v, int64(i))
+		if e != nil {
+			// Clean up whatever values we already created.
+			for j := 0; j < i; j++ {
+				internalValues[i].Destroy()
+			}
+			return nil, fmt.Errorf("Error retrieving sequence contents at "+
+				"index %d: %w", i, e)
+		}
+	}
+
 	return &Sequence{
-		ortValue:   v,
-		valueCount: length,
+		ortValue: v,
+		contents: internalValues,
 	}, nil
 }
 
