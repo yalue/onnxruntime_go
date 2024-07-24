@@ -1211,10 +1211,108 @@ func TestBadSequences(t *testing.T) {
 }
 
 func TestSklearnNetwork(t *testing.T) {
-	// TODO: TestSklearnNetwork
-	//  - One of its outputs is a sequence of maps, make sure it works.
-	//  - Check the values printed by the python script for test inputs and
-	//    expected outputs.
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	//Input names: ['X']
+
+	// These inputs and outputs were taken from the information printed by
+	// test_data/generate_sklearn_network.py
+	inputShape := NewShape(6, 4)
+	inputValues := []float32{
+		5.9, 3.0, 5.1, 1.8,
+		6.8, 2.8, 4.8, 1.4,
+		6.3, 2.3, 4.4, 1.3,
+		6.5, 3.0, 5.5, 1.8,
+		7.7, 2.8, 6.7, 2.0,
+		5.5, 2.5, 4.0, 1.3,
+	}
+
+	// "output_label": A tensor of an int64 label per set of 4 inputs
+	expectedPredictions := []int64{2, 1, 1, 2, 2, 1}
+
+	/* These will be used when verifying the map output data is correct.
+	// "output_probability": A sequence of maps, mapping each int64 label to a
+	// float64 output. We'll just store them in order here.
+	outputProbabilities := []map[int64]float32{
+		{0: 0.0, 1: 0.12999998033046722, 2: 0.8699994683265686},
+		{0: 0.0, 1: 0.7699995636940002, 2: 0.23000003397464752},
+		{0: 0.0, 1: 0.969999372959137, 2: 0.029999999329447746},
+		{0: 0.0, 1: 0.0, 2: 0.9999993443489075},
+		{0: 0.0, 1: 0.0, 2: 0.9999993443489075},
+		{0: 0.0, 1: 0.9999993443489075, 2: 0.0},
+	}
+	*/
+
+	modelPath := "test_data/sklearn_randomforest.onnx"
+	session, e := NewDynamicAdvancedSession(modelPath, []string{"X"},
+		[]string{"output_label", "output_probability"}, nil)
+	if e != nil {
+		t.Fatalf("Error loading %s: %s\n", modelPath, e)
+	}
+	defer session.Destroy()
+
+	// The point of this test is to make sure we get the correct types and
+	// results when the network allocates the output values.
+	outputs := []Value{nil, nil}
+	inputTensor, e := NewTensor(inputShape, inputValues)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer inputTensor.Destroy()
+	e = session.Run([]Value{inputTensor}, outputs)
+	if e != nil {
+		t.Fatalf("Error running %s: %s\n", modelPath, e)
+	}
+	defer func() {
+		for _, v := range outputs {
+			v.Destroy()
+		}
+	}()
+
+	// First, check the easy part: the int64 output tensor
+	tensorDataType := TensorElementDataType(outputs[0].DataType())
+	if tensorDataType != TensorElementDataTypeInt64 {
+		t.Fatalf("Expected int64 output tensor, got %s\n", tensorDataType)
+	}
+	predictionTensor := outputs[0].(*Tensor[int64])
+	predictions := predictionTensor.GetData()
+	if len(predictions) != len(expectedPredictions) {
+		t.Fatalf("Expected %d predictions, got %d\n", len(expectedPredictions),
+			len(predictions))
+	}
+	for i, v := range expectedPredictions {
+		actualPrediction := predictions[i]
+		if v != actualPrediction {
+			t.Errorf("Incorrect prediction at index %d: %d (expected %d)\n",
+				i, actualPrediction, v)
+		}
+	}
+
+	// Next, check the sequence of maps. There is one map giving the fine-
+	// grained probabilities for each label. (Predictions is just the entry
+	// of each map with the highest probability.)
+	sequence, ok := outputs[1].(*Sequence)
+	if !ok {
+		t.Fatalf("Expected a sequence for the probabilities output, got %s\n",
+			outputs[1].GetONNXType())
+	}
+	if sequence.GetValueCount() != int64(len(expectedPredictions)) {
+		t.Fatalf("Expected a %d-element sequence, got %d\n",
+			len(expectedPredictions), sequence.GetValueCount())
+	}
+	/* TODO: Test each sequence element after adding Map support
+	for i := int64(0); i < sequence.GetValueCount(); i++ {
+		m, e := sequence.GetValue(i)
+		if e != nil {
+			t.Fatalf("Failed getting element %d of sequence: %s\n", i, e)
+		}
+		defer m.Destroy()
+		if m.GetONNXType() != ONNXTypeMap {
+			t.Fatalf("Sequence element %d is type %s, expected a map.\n",
+				i, m.GetONNXType())
+		}
+	}
+	*/
 }
 
 // See the comment in generate_network_big_compute.py for information about

@@ -1649,7 +1649,7 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []Value) error {
 			continue
 		}
 		var err error
-		outputs[i], err = createTensorFromOrtValue(outputValues[i])
+		outputs[i], err = createGoValueFromOrtValue(outputValues[i])
 		if err != nil {
 			return fmt.Errorf("Error creating tensor from ort: %w", err)
 		}
