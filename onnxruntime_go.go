@@ -553,7 +553,7 @@ func NewSequence(contents []Value) (*Sequence, error) {
 	// sequences.
 	toReturn, e := createSequenceFromOrtValue(sequence)
 	if e != nil {
-		C.ReleaseOrtValue(sequence)
+		// createSequenceFromOrtValue destroys the sequence on error.
 		return nil, fmt.Errorf("Error creating go Sequence from sequence "+
 			"OrtValue: %w", e)
 	}
@@ -660,7 +660,7 @@ func NewMap(keys, values Value) (*Map, error) {
 	// by onnxruntime. createMapFromOrtValue does this for us.
 	toReturn, e := createMapFromOrtValue(result)
 	if e != nil {
-		C.ReleaseOrtValue(result)
+		// createMapFromOrtValue already destroys the OrtValue on error.
 		return nil, fmt.Errorf("Error creating Map instance from map "+
 			"OrtValue: %w", e)
 	}
@@ -1617,7 +1617,9 @@ func (s *DynamicAdvancedSession) Destroy() error {
 func createTensorWithCData[T TensorData](shape Shape, data unsafe.Pointer) (*Tensor[T], error) {
 	totalSize := shape.FlattenedSize()
 	actualData := unsafe.Slice((*T)(data), totalSize)
-	return NewTensor[T](shape, actualData)
+	dataCopy := make([]T, totalSize)
+	copy(dataCopy, actualData)
+	return NewTensor[T](shape, dataCopy)
 }
 
 // Returns the Shape described by a TensorTypeAndShapeInfo instance.
@@ -1661,9 +1663,13 @@ func getValueCount(v *C.OrtValue) (int64, error) {
 	return int64(size), nil
 }
 
-// Takes a OrtValue and returns an appropriate Go Value wrapping it. Does not
-// copy the value. This function assumes that v will be destroyed later when
-// the returned go Value is destroyed.
+// Takes an OrtValue and returns an appropriate Go value wrapping it, or at
+// least an equivalent go value in case v is a Tensor. The Value v should
+// _not_ be released after calling this function; it will either be released
+// internally or released when the returned Value is Destroy()'d. (Callers must
+// destroy the returned value.)
+//
+// If this function fails, v will be released.
 func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
 	if v == nil {
 		return nil, fmt.Errorf("Internal error: got nil argument to " +
@@ -1671,6 +1677,7 @@ func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
 	}
 	valueType, e := getValueType(v)
 	if e != nil {
+		C.ReleaseOrtValue(v)
 		return nil, e
 	}
 	switch valueType {
@@ -1683,13 +1690,22 @@ func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
 	default:
 		break
 	}
+	C.ReleaseOrtValue(v)
 	return nil, fmt.Errorf("It is currently not supported to create a Go "+
 		"value from OrtValues with ONNXType = %s", valueType)
 }
 
 // Must only be called if v is known to be of type ONNXTensor. Returns a Tensor
-// wrapping v with the correct Go type.
+// wrapping v with the correct Go type. This function always copies v's
+// contents into a new Tensor backed by a Go-managed slice and releases v.
 func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
+	// Either in the case of error or otherwise, we'll release v. The issue is
+	// that GetTensorMutableData() becomes invalid after v is Released, so we
+	// can't release v if a reference to the slice returned by GetData is
+	// still referred to outside of the tensor. We work around this by copying
+	// the data into a new tensor and releasing the original.
+	defer C.ReleaseOrtValue(v)
+
 	var pInfo *C.OrtTensorTypeAndShapeInfo
 	status := C.GetTensorTypeAndShape(v, &pInfo)
 	if status != nil {
@@ -1739,15 +1755,19 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 	default:
 		totalSize := shape.FlattenedSize()
 		actualData := unsafe.Slice((*byte)(tensorData), totalSize)
-		return NewCustomDataTensor(shape, actualData, tensorType)
+		dataCopy := make([]byte, totalSize)
+		copy(dataCopy, actualData)
+		return NewCustomDataTensor(shape, dataCopy, tensorType)
 	}
 }
 
 // Must only be called if v is already known to be an ONNXTypeSequence. Returns
-// a Sequence go type wrapping v.
+// a Sequence go type wrapping v. Releases v if an error occurs; otherwise v
+// will be released when the returned Sequence is destroyed.
 func createSequenceFromOrtValue(v *C.OrtValue) (*Sequence, error) {
 	length, e := getValueCount(v)
 	if e != nil {
+		C.ReleaseOrtValue(v)
 		return nil, fmt.Errorf("Error determining sequence length: %w", e)
 	}
 
@@ -1760,6 +1780,7 @@ func createSequenceFromOrtValue(v *C.OrtValue) (*Sequence, error) {
 			for j := 0; j < i; j++ {
 				internalValues[i].Destroy()
 			}
+			C.ReleaseOrtValue(v)
 			return nil, fmt.Errorf("Error retrieving sequence contents at "+
 				"index %d: %w", i, e)
 		}
@@ -1772,16 +1793,19 @@ func createSequenceFromOrtValue(v *C.OrtValue) (*Sequence, error) {
 }
 
 // Must only be called if v is already known to be an ONNXTypeMap. Returns a
-// Map go type wrapping v.
+// Map go type wrapping v. Releases v if an error occurs, otherwise v will be
+// released when the returned Map is destroyed.
 func createMapFromOrtValue(v *C.OrtValue) (*Map, error) {
 	// Obtain the keys and values as tensors from the Map instance.
 	keys, e := getSequenceOrMapValue(v, 0)
 	if e != nil {
+		C.ReleaseOrtValue(v)
 		return nil, fmt.Errorf("Error getting keys tensor from map: %w", e)
 	}
 	values, e := getSequenceOrMapValue(v, 1)
 	if e != nil {
 		keys.Destroy()
+		C.ReleaseOrtValue(v)
 		return nil, fmt.Errorf("Error getting values tensor from map: %w", e)
 	}
 
