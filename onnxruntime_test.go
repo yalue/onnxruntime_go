@@ -83,22 +83,31 @@ func parseInputsJSON(path string, t testing.TB) *testInputsInfo {
 	return &toReturn
 }
 
+// Returns nil if a and b are within a small delta of one another, otherwise
+// returns an error indicating their values.
+func floatsEqual(a, b float32) error {
+	diff := a - b
+	if diff < 0 {
+		diff = -diff
+	}
+	// Arbitrarily chosen precision. (Unfortunately, going higher than this may
+	// cause test failures, since the Sum operator doesn't have the same
+	// results as doing sums purely in Go.)
+	if diff >= 0.000001 {
+		return fmt.Errorf("Values differ by too much: %f vs %f", a, b)
+	}
+	return nil
+}
+
 // Returns an error if any element between a and b don't match.
-func floatsEqual(a, b []float32) error {
+func allFloatsEqual(a, b []float32) error {
 	if len(a) != len(b) {
 		return fmt.Errorf("Length mismatch: %d vs %d", len(a), len(b))
 	}
 	for i := range a {
-		diff := a[i] - b[i]
-		if diff < 0 {
-			diff = -diff
-		}
-		// Arbitrarily chosen precision. (Unfortunately, going higher than this
-		// may cause test failures, since the Sum operator doesn't have the
-		// same results as doing sums purely in Go.)
-		if diff >= 0.000001 {
-			return fmt.Errorf("Data element %d doesn't match: %f vs %v",
-				i, a[i], b[i])
+		e := floatsEqual(a[i], b[i])
+		if e != nil {
+			return fmt.Errorf("Data element %d doesn't match: %s", i, e)
 		}
 	}
 	return nil
@@ -365,7 +374,7 @@ func TestExampleNetwork(t *testing.T) {
 	if e != nil {
 		t.Fatalf("Failed to run the session: %s\n", e)
 	}
-	e = floatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
+	e = allFloatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
 	if e != nil {
 		t.Fatalf("The neural network didn't produce the correct result: %s\n",
 			e)
@@ -399,7 +408,7 @@ func TestExampleNetworkDynamic(t *testing.T) {
 	if e != nil {
 		t.Fatalf("Failed to run the session: %s\n", e)
 	}
-	e = floatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
+	e = allFloatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
 	if e != nil {
 		t.Fatalf("The network didn't produce the correct result: %s\n", e)
 	}
@@ -674,7 +683,7 @@ func checkVectorSum(input *Tensor[float32], output *Tensor[float32],
 		expectedSums[i] = sum
 	}
 
-	e := floatsEqual(expectedSums, output.GetData())
+	e := allFloatsEqual(expectedSums, output.GetData())
 	if e != nil {
 		t.Fatalf("ONNX-produced sums don't match CPU-produced sums: %s\n", e)
 	}
@@ -1194,9 +1203,90 @@ func TestBadSequences(t *testing.T) {
 		"sequences: %s\n", e)
 }
 
-/*
-// TODO: Re-add this entire test when Map support is added. It no longer works,
-// even partially, after changing the Sequence API.
+func TestMap(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	testGoMap := map[int64]float64{
+		123: 456.7,
+		789: 123.4,
+	}
+	m, e := NewMapFromGoMap(testGoMap)
+	if e != nil {
+		t.Fatalf("Error creating onnx map from Go map: %s\n", e)
+	}
+	defer m.Destroy()
+	keys, values, e := m.GetKeysAndValues()
+	if e != nil {
+		t.Fatalf("Error getting map keys and values: %s\n", e)
+	}
+
+	// In real code I almost certainly would do these type assertions without
+	// the checks, and just panic if it was wrong. But it makes sense in a test
+	keysTensor, ok := keys.(*Tensor[int64])
+	if !ok {
+		t.Fatalf("Keys weren't a uint32 tensor, but %s\n",
+			TensorElementDataType(keysTensor.DataType()))
+	}
+	valuesTensor, ok := values.(*Tensor[float64])
+	if !ok {
+		t.Fatalf("Values weren't a float64 tensor, but %s\n",
+			TensorElementDataType(valuesTensor.DataType()))
+	}
+
+	if !keysTensor.GetShape().Equals(valuesTensor.GetShape()) {
+		t.Fatalf("Key and value tensor shapes don't match: %s vs %s\n",
+			keysTensor.GetShape(), valuesTensor.GetShape())
+	}
+
+	for i, k := range keysTensor.GetData() {
+		v := valuesTensor.GetData()[i]
+		e = floatsEqual(float32(v), float32(testGoMap[k]))
+		if e != nil {
+			t.Errorf("Value for key %d doesn't match: %s\n", k, e)
+		}
+	}
+}
+
+func TestBadMaps(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	// There are many, many ways I've found to create a bad map. This test only
+	// checks a few of them.
+
+	// We should get an error for an empty map, right? (I don't think the docs
+	// specify at the moment.)
+	_, e := NewMapFromGoMap(map[int64]float32{})
+	if e == nil {
+		t.Fatalf("Didn't get expected error creating empty map.\n")
+	}
+	t.Logf("Got expected error when creating empty map: %s\n", e)
+
+	// Floats aren't supported as keys.
+	floatKeysTensor := newTestTensor[float32](t, NewShape(10))
+	defer floatKeysTensor.Destroy()
+	floatValuesTensor := newTestTensor[float32](t, NewShape(10))
+	defer floatValuesTensor.Destroy()
+	_, e = NewMap(floatKeysTensor, floatValuesTensor)
+	if e == nil {
+		t.Fatalf("Didn't get expected error when using float map keys.\n")
+	}
+	t.Logf("Got expected error when using float map keys: %s\n", e)
+
+	// The length of keys and values must match.
+	tooManyKeysTensor := newTestTensor[int64](t, NewShape(16))
+	for i := range tooManyKeysTensor.GetData() {
+		tooManyKeysTensor.GetData()[i] = int64(i)
+	}
+	defer tooManyKeysTensor.Destroy()
+	_, e = NewMap(tooManyKeysTensor, floatValuesTensor)
+	if e == nil {
+		t.Fatalf("Didn't get expected error when map keys and values are " +
+			"different sizes.\n")
+	}
+	t.Logf("Got expected error when keys and values lengths mismatch: %s\n", e)
+}
 
 func TestSklearnNetwork(t *testing.T) {
 	InitializeRuntime(t)
@@ -1281,24 +1371,48 @@ func TestSklearnNetwork(t *testing.T) {
 		t.Fatalf("Expected a sequence for the probabilities output, got %s\n",
 			outputs[1].GetONNXType())
 	}
-	if sequence.GetValueCount() != int64(len(expectedPredictions)) {
-		t.Fatalf("Expected a %d-element sequence, got %d\n",
-			len(expectedPredictions), sequence.GetValueCount())
+	probabilityMaps, e := sequence.GetValues()
+	if e != nil {
+		t.Fatalf("Error getting contents of sequence of maps: %s\n", e)
 	}
-	// TODO: Test each sequence element after adding Map support
-	for i := int64(0); i < sequence.GetValueCount(); i++ {
-		m, e := sequence.GetValue(i)
-		if e != nil {
-			t.Fatalf("Failed getting element %d of sequence: %s\n", i, e)
+	if len(probabilityMaps) != len(expectedPredictions) {
+		t.Fatalf("Expected a %d-element sequence, got %d\n",
+			len(expectedPredictions), len(probabilityMaps))
+	}
+	for i := range probabilityMaps {
+		m, isMap := probabilityMaps[i].(*Map)
+		if !isMap {
+			t.Fatalf("Output sequence index %d wasn't a map, but a %s\n", i,
+				probabilityMaps[i].GetONNXType())
 		}
-		defer m.Destroy()
-		if m.GetONNXType() != ONNXTypeMap {
-			t.Fatalf("Sequence element %d is type %s, expected a map.\n",
-				i, m.GetONNXType())
+		keys, values, e := m.GetKeysAndValues()
+		if e != nil {
+			t.Fatalf("Error getting keys and values for map at index %d: %s\n",
+				i, e)
+		}
+		if !keys.GetShape().Equals(values.GetShape()) {
+			t.Fatalf("Key and value tensors don't match in shape: %s vs %s\n",
+				keys.GetShape(), values.GetShape())
+		}
+		keysTensor, ok := keys.(*Tensor[int64])
+		if !ok {
+			t.Fatalf("Keys were not an int64 tensor\n")
+		}
+		valuesTensor, ok := values.(*Tensor[float32])
+		if !ok {
+			t.Fatalf("Values were not a float32 tensor\n")
+		}
+		expectedProbabilities := outputProbabilities[i]
+		for j, key := range keysTensor.GetData() {
+			v := valuesTensor.GetData()[j]
+			e = floatsEqual(expectedProbabilities[key], v)
+			if e != nil {
+				t.Errorf("Expected values don't match for key %d in map "+
+					"index %d: %s\n", key, i, e)
+			}
 		}
 	}
 }
-*/
 
 // See the comment in generate_network_big_compute.py for information about
 // the inputs and outputs used for testing or benchmarking session options.

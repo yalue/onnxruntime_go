@@ -488,9 +488,8 @@ func (t TensorElementDataType) String() string {
 	return fmt.Sprintf("Unknown tensor element data type: %d", int(t))
 }
 
-// This wraps an ONNX_TYPE_SEQUENCE OrtValue. Individual elements must be
-// accessed using GetValue. Satisfies the Value interface, though Tensor-
-// related functions such as ZeroContents() may be no-ops.
+// This wraps an ONNX_TYPE_SEQUENCE OrtValue. Satisfies the Value interface,
+// though Tensor-related functions such as ZeroContents() may be no-ops.
 type Sequence struct {
 	ortValue *C.OrtValue
 	// We'll stash the values in the sequence here, so we don't need to look
@@ -498,11 +497,13 @@ type Sequence struct {
 	contents []Value
 }
 
-// Returns the value at the given index in the sequence. Used internally when
-// initializing a go Sequence object.
-func getSequenceValue(ortSequence *C.OrtValue, index int64) (Value, error) {
+// Returns the value at the given index in the sequence or map. (In a map,
+// index 0 is for keys, and 1 is for values.) Used internally when initializing
+// a go Sequence or Map object.
+func getSequenceOrMapValue(sequenceOrMap *C.OrtValue,
+	index int64) (Value, error) {
 	var result *C.OrtValue
-	status := C.GetValue(ortSequence, C.int(index), &result)
+	status := C.GetValue(sequenceOrMap, C.int(index), &result)
 	if status != nil {
 		return nil, fmt.Errorf("Error getting value of index %d: %s", index,
 			statusToError(status))
@@ -533,47 +534,30 @@ func NewSequence(contents []Value) (*Sequence, error) {
 	ortValues := make([]*C.OrtValue, length)
 	for i, v := range contents {
 		if v == nil {
-			// I don't actually know if NULL OrtValue pointers are allowed in
-			// sequences, but I'm assuming not.
 			return nil, fmt.Errorf("Sequences must not contain nil (index "+
 				"%d was nil)", i)
 		}
 		ortValues[i] = v.GetInternals().ortValue
 	}
 
-	// Avoid dereferencing ortValues[0] if the list is empty.
-	var valuesPtr **C.OrtValue
-	if length > 0 {
-		valuesPtr = &(ortValues[0])
-	}
 	var sequence *C.OrtValue
-	status := C.CreateOrtValue(valuesPtr, C.size_t(length),
+	status := C.CreateOrtValue(&(ortValues[0]), C.size_t(length),
 		C.ONNX_TYPE_SEQUENCE, &sequence)
 	if status != nil {
 		return nil, fmt.Errorf("Error creating ORT sequence: %s",
 			statusToError(status))
 	}
 
-	// Next, get each OrtValue from the sequence itself.
-	internalValues := make([]Value, length)
-	var e error
-	for i := int64(0); i < length; i++ {
-		internalValues[i], e = getSequenceValue(sequence, i)
-		if e != nil {
-			// Clean up any go Values that were created before this error.
-			for j := int64(0); j < i; j++ {
-				internalValues[j].Destroy()
-			}
-			C.ReleaseOrtValue(sequence)
-			return nil, fmt.Errorf("Error getting element %d of sequence: %w",
-				i, e)
-		}
+	// Finally, we want to get each OrtValue from the sequence itself, but we
+	// already have a function to do this in the case of onnxruntime-allocated
+	// sequences.
+	toReturn, e := createSequenceFromOrtValue(sequence)
+	if e != nil {
+		C.ReleaseOrtValue(sequence)
+		return nil, fmt.Errorf("Error creating go Sequence from sequence "+
+			"OrtValue: %w", e)
 	}
-
-	return &Sequence{
-		ortValue: sequence,
-		contents: internalValues,
-	}, nil
+	return toReturn, nil
 }
 
 // Returns the list of values in the sequence. Each of these values should
@@ -591,7 +575,7 @@ func (s *Sequence) Destroy() error {
 	var e error
 	for _, v := range s.contents {
 		if v != nil {
-			// Just return the first error if any of these returns an error.
+			// Just return the last error if any of these returns an error.
 			e2 := v.Destroy()
 			if e2 != nil {
 				e = e2
@@ -611,6 +595,7 @@ func (s *Sequence) GetShape() Shape {
 	return NewShape(int64(len(s.contents)))
 }
 
+// Always returns ONNXTypeSequence
 func (s *Sequence) GetONNXType() ONNXType {
 	return ONNXTypeSequence
 }
@@ -632,6 +617,143 @@ func (s *Sequence) GetInternals() *ValueInternalData {
 	return &ValueInternalData{
 		ortValue: s.ortValue,
 	}
+}
+
+// This wraps an ONNX_TYPE_MAP OrtValue. Satisfies the Value interface,
+// though Tensor-related functions such as ZeroContents() may be no-ops.
+type Map struct {
+	ortValue *C.OrtValue
+	// An onnxruntime map is really just two tensors, keys and values, that
+	// must be the same length. These Values will be cleaned up when calling
+	// Map.Destroy.
+	keys   Value
+	values Value
+}
+
+// Creates a new ONNX map that maps the given keys tensor to the given values
+// tensor. Destroying the Map created by this function does _not_ destroy these
+// keys and values tensors; the caller is still responsible for destroying
+// them.
+//
+// Internally, creating a Map requires two tensors of the same length, and
+// with constraints on type.  For example, keys are not allowed to be floats
+// (at least currently). (At the time of writing, this has only been confirmed
+// to work with int64 keys.) There may be many other constraints enforced by
+// the underlying C API.
+func NewMap(keys, values Value) (*Map, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+
+	newMapArgs := []*C.OrtValue{
+		keys.GetInternals().ortValue,
+		values.GetInternals().ortValue,
+	}
+	var result *C.OrtValue
+	status := C.CreateOrtValue(&(newMapArgs[0]), 2, C.ONNX_TYPE_MAP, &result)
+	if status != nil {
+		return nil, fmt.Errorf("Error creating ORT map: %s",
+			statusToError(status))
+	}
+
+	// We need to obtain internal references to the keys and values allocated
+	// by onnxruntime. createMapFromOrtValue does this for us.
+	toReturn, e := createMapFromOrtValue(result)
+	if e != nil {
+		C.ReleaseOrtValue(result)
+		return nil, fmt.Errorf("Error creating Map instance from map "+
+			"OrtValue: %w", e)
+	}
+	return toReturn, nil
+}
+
+// Wraps the creation of an ONNX map from a Go map. K is the key type, and V is
+// the value type. Be aware that constraints on these types exist based on
+// what ONNX supports. See the comment on NewMap.
+func NewMapFromGoMap[K, V TensorData](m map[K]V) (*Map, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	keysSlice := make([]K, len(m))
+	valuesSlice := make([]V, len(m))
+	i := 0
+	for k, v := range m {
+		keysSlice[i] = k
+		valuesSlice[i] = v
+		i++
+	}
+	tensorShape := NewShape(int64(len(m)))
+	keysTensor, e := NewTensor(tensorShape, keysSlice)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating keys tensor for map: %w", e)
+	}
+	defer keysTensor.Destroy()
+	valuesTensor, e := NewTensor(tensorShape, valuesSlice)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating values tensor for map: %w", e)
+	}
+	defer valuesTensor.Destroy()
+	toReturn, e := NewMap(keysTensor, valuesTensor)
+	if e != nil {
+		return nil, fmt.Errorf("Error creating map from key and value "+
+			"tensors: %w", e)
+	}
+	return toReturn, nil
+}
+
+// Returns two Tensors containing the keys and values, respectively. These
+// tensors should _not_ be Destroyed by users; they will be automatically
+// cleaned up when m.Destroy() is called. These are _not_ the same Value
+// instances that were passed to NewMap, and these should not be modified by
+// users.
+func (m *Map) GetKeysAndValues() (Value, Value, error) {
+	return m.keys, m.values, nil
+}
+
+func (m *Map) Destroy() error {
+	C.ReleaseOrtValue(m.ortValue)
+	// Just return the last error if either of these returns an error.
+	var e error
+	e2 := m.keys.Destroy()
+	if e2 != nil {
+		e = e2
+	}
+	e2 = m.values.Destroy()
+	if e2 != nil {
+		e = e2
+	}
+	m.ortValue = nil
+	m.keys = nil
+	m.values = nil
+	return e
+}
+
+// Always returns ONNXTypeMap
+func (m *Map) GetONNXType() ONNXType {
+	return ONNXTypeMap
+}
+
+// Returns the shape of the map's keys Tensor. Essentially, this can be used
+// to determine the number of key/value pairs in the map.
+func (m *Map) GetShape() Shape {
+	return m.keys.GetShape()
+}
+
+func (m *Map) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
+		ortValue: m.ortValue,
+	}
+}
+
+// As with Sequence.ZeroContents(), this is a no-op (at least for now), and is
+// only present for compatibility with the Value interface.
+func (m *Map) ZeroContents() {
+}
+
+// As with a Sequence, this always returns the undefined data type and is only
+// present for compatibility with the Value interface.
+func (m *Map) DataType() C.ONNXTensorElementDataType {
+	return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED
 }
 
 // Wraps the ONNXType enum in C.
@@ -1543,7 +1665,10 @@ func getValueCount(v *C.OrtValue) (int64, error) {
 // copy the value. This function assumes that v will be destroyed later when
 // the returned go Value is destroyed.
 func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
-	// TODO: How to handle v == nil? Is it even possible to get nil here?
+	if v == nil {
+		return nil, fmt.Errorf("Internal error: got nil argument to " +
+			"createGoValueFromOrtValue")
+	}
 	valueType, e := getValueType(v)
 	if e != nil {
 		return nil, e
@@ -1553,6 +1678,8 @@ func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
 		return createTensorFromOrtValue(v)
 	case ONNXTypeSequence:
 		return createSequenceFromOrtValue(v)
+	case ONNXTypeMap:
+		return createMapFromOrtValue(v)
 	default:
 		break
 	}
@@ -1618,7 +1745,7 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 
 // Must only be called if v is already known to be an ONNXTypeSequence. Returns
 // a Sequence go type wrapping v.
-func createSequenceFromOrtValue(v *C.OrtValue) (Value, error) {
+func createSequenceFromOrtValue(v *C.OrtValue) (*Sequence, error) {
 	length, e := getValueCount(v)
 	if e != nil {
 		return nil, fmt.Errorf("Error determining sequence length: %w", e)
@@ -1627,7 +1754,7 @@ func createSequenceFromOrtValue(v *C.OrtValue) (Value, error) {
 	// Retrieve all of the sequence's contents as Go values, too.
 	internalValues := make([]Value, length)
 	for i := range internalValues {
-		internalValues[i], e = getSequenceValue(v, int64(i))
+		internalValues[i], e = getSequenceOrMapValue(v, int64(i))
 		if e != nil {
 			// Clean up whatever values we already created.
 			for j := 0; j < i; j++ {
@@ -1641,6 +1768,27 @@ func createSequenceFromOrtValue(v *C.OrtValue) (Value, error) {
 	return &Sequence{
 		ortValue: v,
 		contents: internalValues,
+	}, nil
+}
+
+// Must only be called if v is already known to be an ONNXTypeMap. Returns a
+// Map go type wrapping v.
+func createMapFromOrtValue(v *C.OrtValue) (*Map, error) {
+	// Obtain the keys and values as tensors from the Map instance.
+	keys, e := getSequenceOrMapValue(v, 0)
+	if e != nil {
+		return nil, fmt.Errorf("Error getting keys tensor from map: %w", e)
+	}
+	values, e := getSequenceOrMapValue(v, 1)
+	if e != nil {
+		keys.Destroy()
+		return nil, fmt.Errorf("Error getting values tensor from map: %w", e)
+	}
+
+	return &Map{
+		ortValue: v,
+		keys:     keys,
+		values:   values,
 	}, nil
 }
 
