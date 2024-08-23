@@ -12,7 +12,7 @@ Coding Style
 
  - Go code must be formatted using the official `gofmt` tool.
 
- - C code should adhere to the portions of Google's C++ style guide, as they
+ - C code should adhere to the portions of Google's C++ style guide that
    apply to C.
 
  - If at all possible, any Go or C code should have at most 80 character lines.
@@ -28,8 +28,8 @@ Coding Style
 Documentation
 -------------
 
- - All Go types and public-facing functions must include a comment on their
-   intended usage, to be parsed by godoc.
+ - All Go types, public-facing functions, and nontrivial internal functions
+   must include a comment on their intended usage, to be parsed by godoc.
 
  - As per the google C++ style guide, all C functions must be documented with a
    comment as well.  If a C function is defined in a header file, the comment
@@ -44,7 +44,7 @@ Tests
    `onnxruntime_test.go` or `onnxruntime_training_test.go`) to serve as a
    sanity check.
 
- - If a test is for an platform-dependent or execution-provider-dependent
+ - If a test is for a platform-dependent or execution-provider-dependent
    feature, the test must be skipped if run on an unsupported system.
 
  - No tests should panic.  Always check errors and fail rather than allowing
@@ -96,8 +96,8 @@ Dependencies
    it would be great to keep it this way.
 
  - Python scripts within `test_data/` can use whatever dependencies they need,
-   because the `.onnx` file they produce should already be included and end
-   users should not be required to run them.
+   because end users should not be required to run the python files, and the
+   `.onnx` file they produce should already be included.
 
 
 C-Specific Stuff
@@ -105,7 +105,7 @@ C-Specific Stuff
 
  - Minimize Go management of C-allocated memory as much as possible. For
    example, see the `convertORTString` function on `onnxruntime_go.go`, which
-   copies a C-allocated string into a garbage-collected `go` string.
+   copies a C-allocated string into a garbage-collected go `string`.
 
  - If you need to use a `OrtAllocator` in onnxruntime's C API, always use the
    default `OrtAllocator` returned by
