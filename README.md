@@ -26,6 +26,10 @@ systems.
 Additionally, this library uses Go's recent addition of generics to support
 multiple Tensor data types; see the `NewTensor` or `NewEmptyTensor` functions.
 
+**IMPORTANT:** As of onnxruntime_go v1.12.0 or above, for CUDA acceleration we
+now require the use of CUDA 12.x and CuDNN 9.x (as required by onnxruntime
+v1.19.0+). Those wishing to stay on CUDA 11.8 should remain on onnxruntime_go
+v1.11.0 or below.
 
 Note on onnxruntime Library Versions
 ------------------------------------
