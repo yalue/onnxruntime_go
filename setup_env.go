@@ -104,6 +104,6 @@ func platformInitializeEnvironment() error {
 // returned string must be freed using C.free when no longer needed. This
 // wrapper is used for source compatibility with onnxruntime API functions
 // requiring paths, which must be UTF-16 on Windows but UTF-8 elsewhere.
-func toOrtCharString(str string) (*C.char, error) {
+func createOrtCharString(str string) (*C.char, error) {
 	return C.CString(str), nil
 }

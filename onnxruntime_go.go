@@ -1437,7 +1437,7 @@ func createCSessionFromFile(path string,
 	if !IsInitialized() {
 		return nil, NotInitializedError
 	}
-	cPath, e := toOrtCharString(path)
+	cPath, e := createOrtCharString(path)
 	if e != nil {
 		return nil, fmt.Errorf("Unable to convert path to C path: %w", e)
 	}
@@ -1455,10 +1455,9 @@ func createCSessionFromFile(path string,
 }
 
 // Initializes an AdvancedSession object without creating the session;
-// essentially converting input and output names. The dynamicInputs argument
-// only enforces a check that inputs and outputs are nonempty and of equal
-// length to the names if false. (Set this to true if creating a
-// DynamicAdvancedSession.)
+// essentially converting input and output names. Set the dynamicInputs
+// argument to true if this will be used for a DynamicAdvancedSession; it will
+// skip checks on the inputs and outputs []Values.
 func newAdvancedSessionInternal(inputNames, outputNames []string,
 	inputs, outputs []Value, dynamicInputs bool) (*AdvancedSession, error) {
 	if !IsInitialized() {

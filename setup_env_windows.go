@@ -76,7 +76,7 @@ func platformInitializeEnvironment() error {
 // The pointer returned by this function must still be freed using C.free when
 // no longer needed. This will return an error if the given string contains
 // non-UTF8 characters.
-func toOrtCharString(str string) (*C.char, error) {
+func createOrtCharString(str string) (*C.char, error) {
 	src := []uint8(str)
 	dst := make([]uint16, 0, (len(src)+1)*2)
 	// Convert UTF-8 to UTF-16 by reading each subsequent rune from src and

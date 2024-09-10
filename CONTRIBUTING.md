@@ -111,15 +111,15 @@ C-Specific Stuff
    default `OrtAllocator` returned by
    `ort_api->GetAllocatorWithDefaultOptions()`.
 
- - ONNXRuntime APIs requiring paths typically specify paths as `ORTCHAR_T*`
-   strings. On Linux/OSX/etc, these should be UTF-8 strings, but on Windows
-   they will be wide-character strings (even though we do import tricks to
-   make the C code think they're plain `char*`'s). The important takeaway:
-   when passing _paths_ to the onnxruntime C API, use the `toPlatformCPath`
-   function to convert a Go string to a C string rather than the plain
-   `C.CString`. On Windows, `toPlatformCPath` will do the UTF-8 to UTF-16
-   conversion (and check for unicode errors), while on Linux it will simply
-   wrap `C.CString` (at least for now).
+ - ONNXRuntime APIs requiring file paths typically use `ORTCHAR_T*`
+   strings. On Linux/OSX/etc, these should be UTF-8, but on Windows they will
+   be wide-character strings. (Our tricks with `#include` to make them look
+   like `char*` to C code even on Windows, but the DLL still expects a
+   `wchar_t*`.)  The important takeaway: when passing `ORTCHAR_T*`
+   values to the onnxruntime C API, use the `createOrtCharString(...)`
+   function. It converts a Go string to a C string, but unlike `C.CString`, it
+   will do UTF8 to UTF16 conversion on Windows. (On Linux, it simply wraps
+   `C.CString`.)
 
 
 A Few Notes on Organization

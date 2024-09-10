@@ -125,7 +125,7 @@ func (s *TrainingSession) ExportModel(path string, outputNames []string) error {
 	for i, name := range outputNames {
 		cOutputNames[i] = C.CString(name)
 	}
-	cPath, err := toOrtCharString(path)
+	cPath, err := createOrtCharString(path)
 	if err != nil {
 		return fmt.Errorf("Error converting export path to C string: %w", err)
 	}
@@ -155,7 +155,7 @@ func (s *TrainingSession) SaveCheckpoint(path string, saveOptimizerState bool) e
 		return fmt.Errorf("directory %s does not exist", dir)
 	}
 
-	cPath, err := toOrtCharString(path)
+	cPath, err := createOrtCharString(path)
 	if err != nil {
 		return fmt.Errorf("Error converting path to C string: %w", err)
 	}
@@ -585,7 +585,7 @@ func NewTrainingSession(checkpointStatePath string,
 	if _, err := os.Stat(trainingModelPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("training model does not exist at path %s", trainingModelPath)
 	}
-	cTrainingPath, err := toOrtCharString(trainingModelPath)
+	cTrainingPath, err := createOrtCharString(trainingModelPath)
 	if err != nil {
 		return nil, fmt.Errorf("Error converting training model path to C string: %w", err)
 	}
@@ -593,7 +593,7 @@ func NewTrainingSession(checkpointStatePath string,
 	if _, err := os.Stat(optimizerModelPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("optimizer s does not exist at path %s", optimizerModelPath)
 	}
-	cOptimizerPath, err := toOrtCharString(optimizerModelPath)
+	cOptimizerPath, err := createOrtCharString(optimizerModelPath)
 	if err != nil {
 		return nil, fmt.Errorf("Error converting optimizer path to C string: %w", err)
 	}
@@ -604,7 +604,7 @@ func NewTrainingSession(checkpointStatePath string,
 		if _, err := os.Stat(evalModelPath); os.IsNotExist(err) {
 			return nil, fmt.Errorf("eval model does not exist at path %s", evalModelPath)
 		}
-		cEvalPath, err = toOrtCharString(evalModelPath)
+		cEvalPath, err = createOrtCharString(evalModelPath)
 		if err != nil {
 			return nil, fmt.Errorf("Error converting eval path to C string: %w", err)
 		}
