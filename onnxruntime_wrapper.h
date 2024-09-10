@@ -10,6 +10,7 @@
 // preprocessor will skip them while _WIN32 is undefined.
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Next, we actually include the header.
 #undef _WIN32
@@ -130,6 +131,11 @@ OrtStatus *AppendExecutionProviderOpenVINOV2(OrtSessionOptions *o,
 // be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
   OrtEnv *env, OrtSession **out, OrtSessionOptions *options);
+
+// Like the CreateSession function, but takes a path to a model rather than a
+// buffer containing it.
+OrtStatus *CreateSessionFromFile(char *model_path, OrtEnv *env,
+  OrtSession **out, OrtSessionOptions *options);
 
 // Runs an ORT session with the given input and output tensors, along with
 // their names. In our use case, outputs must NOT be NULL.

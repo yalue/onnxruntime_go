@@ -214,13 +214,3 @@ If you are not sure whether your platform or build of onnxruntime supports
 training, you can call `onnxruntime_go.IsTrainingSupported()`, which will
 return `true` if training is supported on your system.
 
-*The training API is not currently supported on Windows.*  While training
-support has simply not been tested on other Linux and Mac systems, it is
-currently known to be unsupported on Windows.  This is due to
-`NewTrainingSession` fundamentally requiring filesystem paths, even within the
-C API.  This is difficult to handle in Windows, since the Windows onnxruntime
-DLLs require wide-character strings (unlike the Linux and osx shared
-libraries).  This means that calling these functions on Windows would require
-converting UTF-8 Go `string`s to compatible strings when invoking the C API on
-Windows only. This should possible, but it is simply not a development priority
-at the moment.

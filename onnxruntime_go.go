@@ -6,7 +6,6 @@ package onnxruntime_go
 
 import (
 	"fmt"
-	"os"
 	"unsafe"
 )
 
@@ -90,6 +89,9 @@ func InitializeEnvironment() error {
 	if e != nil {
 		return fmt.Errorf("Platform-specific initialization failed: %w", e)
 	}
+
+	// Get the training API pointer if it is supported.
+	C.SetTrainingApi()
 
 	name := C.CString("Golang onnxruntime environment")
 	defer C.free(unsafe.Pointer(name))
@@ -262,14 +264,6 @@ type Value interface {
 	ZeroContents()
 	GetONNXType() ONNXType
 }
-
-// This type alias is included to avoid breaking older code, where the inputs
-// and outputs to session.Run() were ArbitraryTensors rather than Values.
-type ArbitraryTensor = Value
-
-// As with the ArbitraryTensor type, this type alias only exists to facilitate
-// renaming an old type without breaking existing code.
-type TensorInternalData = ValueInternalData
 
 // Used to manage all input and output data for onnxruntime networks. A Tensor
 // always has an associated type and refers to data contained in an underlying
@@ -1436,34 +1430,55 @@ func createCSession(onnxData []byte, options *SessionOptions) (*C.OrtSession,
 	return ortSession, nil
 }
 
-// The same as NewAdvancedSession, but takes a slice of bytes containing the
-// .onnx network rather than a file path.
-func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
-	outputNames []string, inputs, outputs []Value,
-	options *SessionOptions) (*AdvancedSession, error) {
+// Basically identical to createCSession, except uses a file path rather than
+// a buffer of .onnx content.
+func createCSessionFromFile(path string,
+	options *SessionOptions) (*C.OrtSession, error) {
 	if !IsInitialized() {
 		return nil, NotInitializedError
 	}
-	if len(inputs) == 0 {
-		return nil, fmt.Errorf("No inputs were provided")
-	}
-	if len(outputs) == 0 {
-		return nil, fmt.Errorf("No outputs were provided")
-	}
-	if len(inputs) != len(inputNames) {
-		return nil, fmt.Errorf("Got %d input tensors, but %d input names",
-			len(inputs), len(inputNames))
-	}
-	if len(outputs) != len(outputNames) {
-		return nil, fmt.Errorf("Got %d output tensors, but %d output names",
-			len(outputs), len(outputNames))
-	}
-
-	ortSession, e := createCSession(onnxData, options)
+	cPath, e := createOrtCharString(path)
 	if e != nil {
-		return nil, fmt.Errorf("Error creating C session: %w", e)
+		return nil, fmt.Errorf("Unable to convert path to C path: %w", e)
 	}
+	var ortSession *C.OrtSession
+	var ortSessionOptions *C.OrtSessionOptions
+	if options != nil {
+		ortSessionOptions = options.o
+	}
+	status := C.CreateSessionFromFile(cPath, ortEnv, &ortSession,
+		ortSessionOptions)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return ortSession, nil
+}
 
+// Initializes an AdvancedSession object without creating the session;
+// essentially converting input and output names. Set the dynamicInputs
+// argument to true if this will be used for a DynamicAdvancedSession; it will
+// skip checks on the inputs and outputs []Values.
+func newAdvancedSessionInternal(inputNames, outputNames []string,
+	inputs, outputs []Value, dynamicInputs bool) (*AdvancedSession, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	if !dynamicInputs {
+		if len(inputs) == 0 {
+			return nil, fmt.Errorf("No inputs were provided")
+		}
+		if len(outputs) == 0 {
+			return nil, fmt.Errorf("No outputs were provided")
+		}
+		if len(inputs) != len(inputNames) {
+			return nil, fmt.Errorf("Got %d inputs, but %d input names",
+				len(inputs), len(inputNames))
+		}
+		if len(outputs) != len(outputNames) {
+			return nil, fmt.Errorf("Got %d outputs, but %d output names",
+				len(outputs), len(outputNames))
+		}
+	}
 	// Collect the inputs and outputs, along with their names, into a format
 	// more convenient for passing to the Run() function in the C API.
 	cInputNames := make([]*C.char, len(inputNames))
@@ -1474,21 +1489,42 @@ func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
 	for i, v := range outputNames {
 		cOutputNames[i] = C.CString(v)
 	}
-	inputOrtTensors := make([]*C.OrtValue, len(inputs))
-	outputOrtTensors := make([]*C.OrtValue, len(outputs))
-	for i, v := range inputs {
-		inputOrtTensors[i] = v.GetInternals().ortValue
-	}
-	for i, v := range outputs {
-		outputOrtTensors[i] = v.GetInternals().ortValue
+	var inputOrtValues, outputOrtValues []*C.OrtValue
+	if !dynamicInputs {
+		inputOrtValues = make([]*C.OrtValue, len(inputs))
+		outputOrtValues = make([]*C.OrtValue, len(outputs))
+		for i, v := range inputs {
+			inputOrtValues[i] = v.GetInternals().ortValue
+		}
+		for i, v := range outputs {
+			outputOrtValues[i] = v.GetInternals().ortValue
+		}
 	}
 	return &AdvancedSession{
-		ortSession:  ortSession,
+		ortSession:  nil,
 		inputNames:  cInputNames,
 		outputNames: cOutputNames,
-		inputs:      inputOrtTensors,
-		outputs:     outputOrtTensors,
+		inputs:      inputOrtValues,
+		outputs:     outputOrtValues,
 	}, nil
+}
+
+// The same as NewAdvancedSession, but takes a slice of bytes containing the
+// .onnx network rather than a file path.
+func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
+	outputNames []string, inputs, outputs []Value,
+	options *SessionOptions) (*AdvancedSession, error) {
+	toReturn, e := newAdvancedSessionInternal(inputNames, outputNames, inputs,
+		outputs, false)
+	if e != nil {
+		return nil, e
+	}
+	toReturn.ortSession, e = createCSession(onnxData, options)
+	if e != nil {
+		toReturn.Destroy()
+		return nil, fmt.Errorf("Error creating C session: %w", e)
+	}
+	return toReturn, nil
 }
 
 // Loads the ONNX network at the given path, and initializes an AdvancedSession
@@ -1504,20 +1540,23 @@ func NewAdvancedSessionWithONNXData(onnxData []byte, inputNames,
 func NewAdvancedSession(onnxFilePath string, inputNames, outputNames []string,
 	inputs, outputs []Value,
 	options *SessionOptions) (*AdvancedSession, error) {
-	fileContent, e := os.ReadFile(onnxFilePath)
+	toReturn, e := newAdvancedSessionInternal(inputNames, outputNames, inputs,
+		outputs, false)
 	if e != nil {
-		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+		return nil, e
 	}
-	toReturn, e := NewAdvancedSessionWithONNXData(fileContent, inputNames,
-		outputNames, inputs, outputs, options)
+	toReturn.ortSession, e = createCSessionFromFile(onnxFilePath, options)
 	if e != nil {
-		return nil, fmt.Errorf("Error creating session from %s: %w",
-			onnxFilePath, e)
+		toReturn.Destroy()
+		return nil, fmt.Errorf("Error creating C session from file: %w", e)
 	}
 	return toReturn, nil
 }
 
 func (s *AdvancedSession) Destroy() error {
+	// Including the check that ortSession is not nil allows the Destroy()
+	// function to be used on AdvancedSessions that are partially initialized,
+	// which we do internally.
 	if s.ortSession != nil {
 		C.ReleaseOrtSession(s.ortSession)
 		s.ortSession = nil
@@ -1575,25 +1614,15 @@ type DynamicAdvancedSession struct {
 func NewDynamicAdvancedSessionWithONNXData(onnxData []byte,
 	inputNames, outputNames []string,
 	options *SessionOptions) (*DynamicAdvancedSession, error) {
-	ortSession, e := createCSession(onnxData, options)
+	s, e := newAdvancedSessionInternal(inputNames, outputNames, nil, nil, true)
 	if e != nil {
+		return nil, fmt.Errorf("Error creating internal AdvancedSession: %w",
+			e)
+	}
+	s.ortSession, e = createCSession(onnxData, options)
+	if e != nil {
+		s.Destroy()
 		return nil, fmt.Errorf("Error creating C session: %w", e)
-	}
-	cInputNames := make([]*C.char, len(inputNames))
-	cOutputNames := make([]*C.char, len(outputNames))
-	for i, v := range inputNames {
-		cInputNames[i] = C.CString(v)
-	}
-	for i, v := range outputNames {
-		cOutputNames[i] = C.CString(v)
-	}
-	// We don't use the input and output list of OrtValues with these.
-	s := &AdvancedSession{
-		ortSession:  ortSession,
-		inputNames:  cInputNames,
-		outputNames: cOutputNames,
-		inputs:      nil,
-		outputs:     nil,
 	}
 	return &DynamicAdvancedSession{
 		s: s,
@@ -1605,18 +1634,19 @@ func NewDynamicAdvancedSessionWithONNXData(onnxData []byte,
 func NewDynamicAdvancedSession(onnxFilePath string, inputNames,
 	outputNames []string, options *SessionOptions) (*DynamicAdvancedSession,
 	error) {
-	fileContent, e := os.ReadFile(onnxFilePath)
+	s, e := newAdvancedSessionInternal(inputNames, outputNames, nil, nil, true)
 	if e != nil {
-		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
+		return nil, fmt.Errorf("Error creating internal AdvancedSession: %w",
+			e)
 	}
-
-	toReturn, e := NewDynamicAdvancedSessionWithONNXData(fileContent,
-		inputNames, outputNames, options)
+	s.ortSession, e = createCSessionFromFile(onnxFilePath, options)
 	if e != nil {
-		return nil, fmt.Errorf("Error creating dynamic session from %s: %w",
-			onnxFilePath, e)
+		s.Destroy()
+		return nil, fmt.Errorf("Error creating C session from file: %w", e)
 	}
-	return toReturn, nil
+	return &DynamicAdvancedSession{
+		s: s,
+	}, nil
 }
 
 func (s *DynamicAdvancedSession) Destroy() error {
@@ -2024,46 +2054,11 @@ func getSessionOutputInfo(s *C.OrtSession, i int, dst *InputOutputInfo) error {
 	return nil
 }
 
-// Takes a path to a .onnx file, and returns a list of inputs and a list of
-// outputs, respectively. Will open, read, and close the .onnx file to get the
-// information. InitializeEnvironment() must have been called prior to using
-// this function. Warning: this function requires loading the .onnx file into a
-// temporary onnxruntime session, which may be an expensive operation.
-//
-// For now, this may fail if the network has any non-tensor inputs or inputs
-// that don't have a concrete shape and type. In the future, a new API may be
-// added to support cases requiring more advanced usage of the C.OrtTypeInfo
-// struct.
-func GetInputOutputInfo(path string) ([]InputOutputInfo, []InputOutputInfo,
-	error) {
-	// We'll check for initialization in GetInputOutputInfoWithONNXData
-	fileContent, e := os.ReadFile(path)
-	if e != nil {
-		return nil, nil, fmt.Errorf("Error reading %s: %w", path, e)
-	}
-	inputs, outputs, e := GetInputOutputInfoWithONNXData(fileContent)
-	if e != nil {
-		return nil, nil, fmt.Errorf("Error getting inputs and outputs from "+
-			"%s: %w", path, e)
-	}
-	return inputs, outputs, nil
-}
-
-// Identical in behavior to GetInputOutputInfo, but takes a slice of bytes
-// containing the .onnx network rather than a file path.
-func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
+// Takes an initialized OrtSession and returns slices of info for each input
+// and output, respectively. Used internally by GetInputOutputInfo, etc.
+func getInputOutputInfoFromCSession(s *C.OrtSession) ([]InputOutputInfo,
 	[]InputOutputInfo, error) {
 	var e error
-	if !IsInitialized() {
-		return nil, nil, NotInitializedError
-	}
-
-	// Create the temporary ORT session from which we'll load the information.
-	s, e := createCSession(data, nil)
-	if e != nil {
-		return nil, nil, fmt.Errorf("Error creating temporary session: %w", e)
-	}
-	defer C.ReleaseOrtSession(s)
 
 	// Allocate the structs to hold the results.
 	var inputCount, outputCount C.size_t
@@ -2093,8 +2088,51 @@ func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
 				"output %d: %w", i, e)
 		}
 	}
-
 	return inputs, outputs, nil
+}
+
+// Takes a path to a .onnx file, and returns a list of inputs and a list of
+// outputs, respectively. Will open, read, and close the .onnx file to get the
+// information. InitializeEnvironment() must have been called prior to using
+// this function. Warning: this function requires loading the .onnx file into a
+// temporary onnxruntime session, which may be an expensive operation.
+//
+// For now, this may fail if the network has any non-tensor inputs or inputs
+// that don't have a concrete shape and type. In the future, a new API may be
+// added to support cases requiring more advanced usage of the C.OrtTypeInfo
+// struct.
+func GetInputOutputInfo(path string) ([]InputOutputInfo, []InputOutputInfo,
+	error) {
+	s, e := createCSessionFromFile(path, nil)
+	if e != nil {
+		return nil, nil, fmt.Errorf("Error loading temporary session: %w", e)
+	}
+	defer C.ReleaseOrtSession(s)
+	return getInputOutputInfoFromCSession(s)
+}
+
+// Identical in behavior to GetInputOutputInfo, but takes a slice of bytes
+// containing the .onnx network rather than a file path.
+func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
+	[]InputOutputInfo, error) {
+	var e error
+	s, e := createCSession(data, nil)
+	if e != nil {
+		return nil, nil, fmt.Errorf("Error creating temporary session: %w", e)
+	}
+	defer C.ReleaseOrtSession(s)
+	return getInputOutputInfoFromCSession(s)
+}
+
+func getModelMetadataFromCSession(s *C.OrtSession) (*ModelMetadata, error) {
+	var m *C.OrtModelMetadata
+	status := C.SessionGetModelMetadata(s, &m)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &ModelMetadata{
+		m: m,
+	}, nil
 }
 
 // Takes a path to a .onnx file and returns the ModelMetadata associated with
@@ -2105,11 +2143,12 @@ func GetInputOutputInfoWithONNXData(data []byte) ([]InputOutputInfo,
 // Warning: This function loads the onnx content into a temporary onnxruntime
 // session, so it may be computationally expensive.
 func GetModelMetadata(path string) (*ModelMetadata, error) {
-	fileContent, e := os.ReadFile(path)
+	s, e := createCSessionFromFile(path, nil)
 	if e != nil {
-		return nil, fmt.Errorf("Error reading %s: %w", path, e)
+		return nil, fmt.Errorf("Error loading %s: %w", path, e)
 	}
-	return GetModelMetadataWithONNXData(fileContent)
+	defer C.ReleaseOrtSession(s)
+	return getModelMetadataFromCSession(s)
 }
 
 // Identical in behavior to GetModelMetadata, but takes a slice of bytes
@@ -2124,12 +2163,5 @@ func GetModelMetadataWithONNXData(data []byte) (*ModelMetadata, error) {
 		return nil, fmt.Errorf("Error creating temporary session: %w", e)
 	}
 	defer C.ReleaseOrtSession(s)
-	var m *C.OrtModelMetadata
-	status := C.SessionGetModelMetadata(s, &m)
-	if status != nil {
-		return nil, statusToError(status)
-	}
-	return &ModelMetadata{
-		m: m,
-	}, nil
+	return getModelMetadataFromCSession(s)
 }

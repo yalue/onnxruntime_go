@@ -1,7 +1,6 @@
 package onnxruntime_go
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -13,15 +12,6 @@ import (
 // Always use the same RNG seed for benchmarks, so we can compare the
 // performance on the same random input data.
 const benchmarkRNGSeed = 12345678
-
-// This type is read from JSON and used to determine the inputs and expected
-// outputs for an ONNX network.
-type testInputsInfo struct {
-	InputShape      []int64   `json:"input_shape"`
-	FlattenedInput  []float32 `json:"flattened_input"`
-	OutputShape     []int64   `json:"output_shape"`
-	FlattenedOutput []float32 `json:"flattened_output"`
-}
 
 // If the ONNXRUNTIME_SHARED_LIBRARY_PATH environment variable is set, then
 // we'll try to use its contents as the location of the shared library for
@@ -65,22 +55,6 @@ func CleanupRuntime(t testing.TB) {
 	if e != nil {
 		t.Fatalf("Error cleaning up environment: %s\n", e)
 	}
-}
-
-// Used to obtain the shape
-func parseInputsJSON(path string, t testing.TB) *testInputsInfo {
-	toReturn := testInputsInfo{}
-	f, e := os.Open(path)
-	if e != nil {
-		t.Fatalf("Failed opening %s: %s\n", path, e)
-	}
-	defer f.Close()
-	d := json.NewDecoder(f)
-	e = d.Decode(&toReturn)
-	if e != nil {
-		t.Fatalf("Failed decoding %s: %s\n", path, e)
-	}
-	return &toReturn
 }
 
 // Returns nil if a and b are within a small delta of one another, otherwise
@@ -313,8 +287,12 @@ func TestEmptyONNXFiles(t *testing.T) {
 	defer CleanupRuntime(t)
 	inputNames := []string{"whatever"}
 	outputNames := []string{"whatever_out"}
-	inputTensors := []Value{nil}
-	outputTensors := []Value{nil}
+	dummyIn := newTestTensor[float32](t, NewShape(1))
+	defer dummyIn.Destroy()
+	dummyOut := newTestTensor[float32](t, NewShape(1))
+	defer dummyOut.Destroy()
+	inputTensors := []Value{dummyIn}
+	outputTensors := []Value{dummyOut}
 	_, e := NewAdvancedSessionWithONNXData([]byte{}, inputNames, outputNames,
 		inputTensors, outputTensors, nil)
 	if e == nil {
@@ -347,70 +325,65 @@ func TestEmptyONNXFiles(t *testing.T) {
 		"content: %s\n", e)
 }
 
-func TestExampleNetwork(t *testing.T) {
+func TestLegacyAPI(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
 
-	// Create input and output tensors
-	inputs := parseInputsJSON("test_data/example_network_results.json", t)
-	inputTensor, e := NewTensor(Shape(inputs.InputShape),
-		inputs.FlattenedInput)
+	// We'll use this network simply due to its simple input and output format,
+	// as well as it using the same data type for inputs and outputs. See
+	// TestNonAsciiPath for more comments.
+	filePath := "test_data/example ż 大 김.onnx"
+	inputData := []int32{12, 21}
+	input, e := NewTensor(NewShape(1, 2), inputData)
 	if e != nil {
-		t.Fatalf("Failed creating input tensor: %s\n", e)
+		t.Fatalf("Error creating input tensor: %s\n", e)
 	}
-	defer inputTensor.Destroy()
-	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
-	defer outputTensor.Destroy()
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
 
-	// Set up and run the session.
-	session, e := NewSession[float32]("test_data/example_network.onnx",
-		[]string{"1x4 Input Vector"}, []string{"1x2 Output Vector"},
-		[]*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
+	session, e := NewSession[int32](filePath, []string{"in"}, []string{"out"},
+		[]*Tensor[int32]{input}, []*Tensor[int32]{output})
 	if e != nil {
-		t.Fatalf("Failed creating session: %s\n", e)
+		t.Fatalf("Error creating sesion via legacy API: %s\n", e)
 	}
-	defer session.Destroy()
 	e = session.Run()
 	if e != nil {
-		t.Fatalf("Failed to run the session: %s\n", e)
+		t.Fatalf("Error running session: %s\n", e)
 	}
-	e = allFloatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
-	if e != nil {
-		t.Fatalf("The neural network didn't produce the correct result: %s\n",
-			e)
+	expected := inputData[0] + inputData[1]
+	result := output.GetData()[0]
+	if result != expected {
+		t.Errorf("Incorrect result. Expected %d, got %d.\n", expected, result)
 	}
 }
 
-func TestExampleNetworkDynamic(t *testing.T) {
+func TestLegacyAPIDynamic(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
+	filePath := "test_data/example ż 大 김.onnx"
+	inputData := []int32{12, 21}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
 
-	// Create input and output tensors
-	inputs := parseInputsJSON("test_data/example_network_results.json", t)
-	inputTensor, e := NewTensor(Shape(inputs.InputShape),
-		inputs.FlattenedInput)
+	session, e := NewDynamicSession[int32, int32](filePath,
+		[]string{"in"}, []string{"out"})
 	if e != nil {
-		t.Fatalf("Failed creating input tensor: %s\n", e)
+		t.Fatalf("Error creating sesion via legacy API: %s\n", e)
 	}
-	defer inputTensor.Destroy()
-	outputTensor := newTestTensor[float32](t, Shape(inputs.OutputShape))
-	defer outputTensor.Destroy()
-
-	// Set up and run the session without specifying the inputs and outputs shapes
-	session, e := NewDynamicSession[float32, float32]("test_data/example_network.onnx",
-		[]string{"1x4 Input Vector"}, []string{"1x2 Output Vector"})
+	e = session.Run([]*Tensor[int32]{input}, []*Tensor[int32]{output})
 	if e != nil {
-		t.Fatalf("Failed creating session: %s\n", e)
+		t.Fatalf("Error running session: %s\n", e)
 	}
-	defer session.Destroy()
-	// running with the input
-	e = session.Run([]*Tensor[float32]{inputTensor}, []*Tensor[float32]{outputTensor})
-	if e != nil {
-		t.Fatalf("Failed to run the session: %s\n", e)
-	}
-	e = allFloatsEqual(outputTensor.GetData(), inputs.FlattenedOutput)
-	if e != nil {
-		t.Fatalf("The network didn't produce the correct result: %s\n", e)
+	expected := inputData[0] + inputData[1]
+	result := output.GetData()[0]
+	if result != expected {
+		t.Errorf("Incorrect result. Expected %d, got %d.\n", expected, result)
 	}
 }
 
@@ -857,7 +830,7 @@ func TestGetInputOutputInfo(t *testing.T) {
 func TestModelMetadata(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
-	file := "test_data/example_network.onnx"
+	file := "test_data/example_big_compute.onnx"
 	metadata, e := GetModelMetadata(file)
 	if e != nil {
 		t.Fatalf("Error getting metadata for %s: %s\n", file, e)
@@ -872,7 +845,6 @@ func TestModelMetadata(t *testing.T) {
 	// NOTE: All of the expected values here were manually set using the
 	// test_data/modify_metadata.py script after generating the network. See
 	// that script for the expected values of each of the metadata accesors.
-	file = "test_data/example_big_compute.onnx"
 	session, e := NewDynamicAdvancedSession(file, []string{"Input"},
 		[]string{"Output"}, nil)
 	if e != nil {
@@ -1411,6 +1383,81 @@ func TestSklearnNetwork(t *testing.T) {
 					"index %d: %s\n", key, i, e)
 			}
 		}
+	}
+}
+
+// This tests that we're able to read a file containing multi-byte characters
+// in the path.
+func TestNonAsciiPath(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	// The test network just adds two integers and returns the result.
+	inputData := []int32{12, 21}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
+
+	filePath := "test_data/example ż 大 김.onnx"
+	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"},
+		[]Value{input}, []Value{output}, nil)
+	if e != nil {
+		t.Fatalf("Failed creating session for %s: %s\n", filePath, e)
+	}
+
+	e = session.Run()
+	if e != nil {
+		t.Fatalf("Error running %s: %s\n", filePath, e)
+	}
+	expected := inputData[0] + inputData[1]
+	result := output.GetData()[0]
+	if result != expected {
+		t.Errorf("Running %s gave the wrong result. Expected %d, got %d.\n",
+			filePath, expected, result)
+	}
+}
+
+// This tests that the *WithONNXData method works for loading a session.
+// Hopefully this covers most other *WithONNXData variants, since all use the
+// same code internally when creating an OrtSession in C.
+func TestSessionFromDataBuffer(t *testing.T) {
+	// This test is almost a copy of TestNonAsciiPath, since it was fairly
+	// simple.
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	inputData := []int32{12, 21}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
+
+	filePath := "test_data/example ż 大 김.onnx"
+	fileData, e := os.ReadFile(filePath)
+	if e != nil {
+		t.Fatalf("Error buffering content of %s: %s\n", filePath, e)
+	}
+
+	session, e := NewAdvancedSessionWithONNXData(fileData, []string{"in"},
+		[]string{"out"}, []Value{input}, []Value{output}, nil)
+	if e != nil {
+		t.Fatalf("Failed creating session: %s\n", e)
+	}
+	e = session.Run()
+	if e != nil {
+		t.Fatalf("Error running session: %s\n", e)
+	}
+	expected := inputData[0] + inputData[1]
+	result := output.GetData()[0]
+	if result != expected {
+		t.Errorf("Incorrect result. Expected %d, got %d.\n", expected, result)
 	}
 }
 
