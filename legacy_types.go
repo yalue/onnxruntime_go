@@ -65,7 +65,8 @@ func NewSessionWithONNXData[T TensorData](onnxData []byte, inputNames,
 }
 
 // Similar to NewSessionWithOnnxData, but for dynamic sessions.
-func NewDynamicSessionWithONNXData[in TensorData, out TensorData](onnxData []byte, inputNames, outputNames []string) (*DynamicSession[in, out], error) {
+func NewDynamicSessionWithONNXData[in TensorData, out TensorData](onnxData []byte,
+	inputNames, outputNames []string) (*DynamicSession[in, out], error) {
 	s, e := NewDynamicAdvancedSessionWithONNXData(onnxData, inputNames,
 		outputNames, nil)
 	if e != nil {
@@ -108,7 +109,8 @@ func NewDynamicSession[in TensorData, out TensorData](onnxFilePath string,
 		return nil, fmt.Errorf("Error reading %s: %w", onnxFilePath, e)
 	}
 
-	toReturn, e := NewDynamicSessionWithONNXData[in, out](fileContent, inputNames, outputNames)
+	toReturn, e := NewDynamicSessionWithONNXData[in, out](fileContent,
+		inputNames, outputNames)
 	if e != nil {
 		return nil, fmt.Errorf("Error creating session from %s: %w",
 			onnxFilePath, e)
@@ -161,3 +163,11 @@ func (s *DynamicSession[in, out]) Run(inputs []*Tensor[in],
 	}
 	return nil
 }
+
+// This type alias is included to avoid breaking older code, where the inputs
+// and outputs to session.Run() were ArbitraryTensors rather than Values.
+type ArbitraryTensor = Value
+
+// As with the ArbitraryTensor type, this type alias only exists to facilitate
+// renaming an old type without breaking existing code.
+type TensorInternalData = ValueInternalData

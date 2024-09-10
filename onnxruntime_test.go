@@ -306,6 +306,8 @@ func TestZeroTensorContents(t *testing.T) {
 	}
 }
 
+// TODO (next): Add tests for the *WithONNXData variants of these functions.
+
 // This test makes sure that functions taking .onnx data don't crash when
 // passed an empty slice. (This used to be a bug.)
 func TestEmptyONNXFiles(t *testing.T) {
@@ -313,8 +315,12 @@ func TestEmptyONNXFiles(t *testing.T) {
 	defer CleanupRuntime(t)
 	inputNames := []string{"whatever"}
 	outputNames := []string{"whatever_out"}
-	inputTensors := []Value{nil}
-	outputTensors := []Value{nil}
+	dummyIn := newTestTensor[float32](t, NewShape(1))
+	defer dummyIn.Destroy()
+	dummyOut := newTestTensor[float32](t, NewShape(1))
+	defer dummyOut.Destroy()
+	inputTensors := []Value{dummyIn}
+	outputTensors := []Value{dummyOut}
 	_, e := NewAdvancedSessionWithONNXData([]byte{}, inputNames, outputNames,
 		inputTensors, outputTensors, nil)
 	if e == nil {

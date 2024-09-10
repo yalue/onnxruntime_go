@@ -192,6 +192,23 @@ OrtStatus *CreateSession(void *model_data, size_t model_data_length,
   return status;
 }
 
+OrtStatus *CreateSessionFromFile(char *model_path, OrtEnv *env,
+  OrtSession **out, OrtSessionOptions *options) {
+  // Nearly identical to CreateSession, except invokes ort_api->CreateSession
+  // rather than ort_api->CreateSessionFromArray.
+  OrtStatus *status = NULL;
+  int default_options = 0;
+  if (!options) {
+    default_options = 1;
+    status = ort_api->CreateSessionOptions(&options);
+    if (status) return status;
+  }
+  status = ort_api->CreateSession(env, (const ORTCHAR_T*) model_path, options,
+    out);
+  if (default_options) ort_api->ReleaseSessionOptions(options);
+  return status;
+}
+
 OrtStatus *RunOrtSession(OrtSession *session,
   OrtValue **inputs, char **input_names, int input_count,
   OrtValue **outputs, char **output_names, int output_count) {
@@ -394,10 +411,7 @@ void SetTrainingApi() {
 }
 
 int IsTrainingApiSupported() {
-  if (ort_training_api == NULL) {
-    return 0;
-  }
-  return 1;
+  return ort_training_api != NULL;
 }
 
 OrtStatus *CreateCheckpoint(void *checkpoint_data, size_t checkpoint_data_length, OrtCheckpointState **out) {
