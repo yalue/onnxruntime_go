@@ -78,7 +78,9 @@ func platformInitializeEnvironment() error {
 // non-UTF8 characters.
 func createOrtCharString(str string) (*C.char, error) {
 	src := []uint8(str)
-	dst := make([]uint16, 0, (len(src)+1)*2)
+	// Assumed common case: the utf16 buffer contains one uint16 per utf8 byte
+	// plus one more for the required null terminator in the C buffer.
+	dst := make([]uint16, 0, len(src)+1)
 	// Convert UTF-8 to UTF-16 by reading each subsequent rune from src and
 	// appending it as UTF-16 to dst.
 	for len(src) > 0 {
@@ -97,7 +99,7 @@ func createOrtCharString(str string) (*C.char, error) {
 	// C.CString.
 	toReturn := C.calloc(C.size_t(len(dst)), 2)
 	if toReturn == nil {
-		return nil, fmt.Errorf("Error allocating C buffer to hold utf16 str")
+		return nil, fmt.Errorf("Error allocating buffer for the utf16 string")
 	}
 	C.memcpy(toReturn, unsafe.Pointer(&(dst[0])), C.size_t(len(dst))*2)
 

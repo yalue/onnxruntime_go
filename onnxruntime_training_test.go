@@ -2,7 +2,6 @@ package onnxruntime_go
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -245,7 +244,7 @@ func TestTraining(t *testing.T) {
 			}
 		}
 		if epoch%10 == 0 {
-			fmt.Printf("Epoch {%d} Loss {%f}\n", epoch+1, epochLoss/float32(batchSize*nBatches))
+			t.Logf("Epoch {%d} Loss {%f}\n", epoch+1, epochLoss/float32(batchSize*nBatches))
 			losses = append(losses, epochLoss/float32(batchSize*nBatches))
 		}
 	}
