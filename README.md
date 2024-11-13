@@ -206,10 +206,13 @@ run and pass.
 Training API Support
 --------------------
 
-This wrapper supports the onnxruntime training API on limited platforms. See
-the `NewTrainingSession` and associated data types or functions to use it. So
-far, the training API has only been tested on Linux, on `x86_64` architectures.
+The training API has been deprecated as of onnxruntime version 1.20.  Rather
+than continuing to maintain wrappers for a deprecated API, `onnxruntime_go` has
+replaced the wrapper functions for the training API with stubs that return an
+error.  Users who need to continue to use the training API will need to use an
+older version.  For example the following versions should be compatible with
+training:
 
-If you are not sure whether your platform or build of onnxruntime supports
-training, you can call `onnxruntime_go.IsTrainingSupported()`, which will
-return `true` if training is supported on your system.
+ - Version `v1.12.1` of `onnxruntime_go`, and
+ - Version 1.19.2 of `onnxruntime`.
+

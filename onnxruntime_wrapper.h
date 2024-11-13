@@ -15,7 +15,6 @@
 // Next, we actually include the header.
 #undef _WIN32
 #include "onnxruntime_c_api.h"
-#include "onnxruntime_training_c_api.h"
 
 // ... However, mingw will complain if _WIN32 is *not* defined! So redefine it.
 #define _WIN32
@@ -253,75 +252,6 @@ OrtStatus *GetValueCount(OrtValue *v, size_t *out);
 // Wraps ort_api->CreateValue to create a map or a sequence.
 OrtStatus *CreateOrtValue(OrtValue **in, size_t num_values,
   enum ONNXType value_type, OrtValue **out);
-
-// TRAINING API WRAPPER
-
-void SetTrainingApi();
-
-// Checks if training api is supported.
-int IsTrainingApiSupported();
-
-// Wraps ort_training_api->CreateSessionFromBuffer.
-// Creates and ORT checkpoint from the checkpoint data.
-OrtStatus *CreateCheckpoint(void *checkpoint_data,
-  size_t checkpoint_data_length, OrtCheckpointState **out);
-
-// Wraps ort_training_api->CreateTrainingSessionFromBuffer. Creates an ORT
-// training session using the given models and checkpoint. The given options
-// pointer may be NULL; if it is, then we'll use default options.
-OrtStatus *CreateTrainingSessionFromBuffer(OrtCheckpointState *checkpoint_state,
-  void *training_model_data, size_t training_model_data_length,
-  void *eval_model_data, size_t eval_model_data_length,
-  void *optim_model_data, size_t optim_model_data_length,
-  OrtEnv *env, OrtTrainingSession **out, OrtSessionOptions *options);
-
-// Wraps ort_training_api->CreateTrainingSession.
-// Currently this is the only way to create a training session that is able to
-// export the final trained model to disk.
-OrtStatus *CreateTrainingSessionFromPaths(OrtCheckpointState *checkpoint_state,
-    char *training_model_path, char *eval_model_path, char *optim_model_path, 
-    OrtEnv *env, OrtTrainingSession **out, OrtSessionOptions *options);
-
-// Wraps ort_training_api->TrainingSessionGetTrainingModelInputCount
-// and ort_training_api->TrainingSessionGetEvalgModelInputCount.
-OrtStatus *TrainingSessionGetInputCount(OrtTrainingSession *training_session, size_t *result_training, size_t *result_eval);
-
-// Wraps ort_training_api->TrainingSessionGetTrainingModelOutputCounet
-// and ort_training_api->TrainingSessionGetEvalgModelOutputCount.
-OrtStatus *TrainingSessionGetOutputCount(OrtTrainingSession *training_session, size_t *result_training, size_t *result_eval);
-
-// Wraps ort_training_api->TrainingSessionGetTrainingModelInputName.
-OrtStatus *TrainingSessionGetTrainingInputName(OrtTrainingSession *training_session, size_t i, char **name);
-
-// Wraps ort_training_api->TrainingSessionGetEvalModelInputName.
-OrtStatus *TrainingSessionGetEvalInputName(OrtTrainingSession *training_session, size_t i, char **name);
-
-// Wraps ort_training_api->TrainingSessionGetTrainingModelOutputName.
-OrtStatus *TrainingSessionGetTrainingOutputName(OrtTrainingSession *training_session, size_t i, char **name);
-
-// Wraps ort_training_api->TrainingSessionGetEvalModelOutputName.
-OrtStatus *TrainingSessionGetEvalOutputName(OrtTrainingSession *training_session, size_t i, char **name);
-
-// Wraps ort_training_api->TrainStep.
-OrtStatus *TrainStep(OrtTrainingSession *training_session, size_t inputs_len, OrtValue **inputs, size_t output_len, OrtValue **outputs);
-
-// Wraps ort_training_api->OptimizerStep.
-OrtStatus *OptimizerStep(OrtTrainingSession *training_session);
-
-// Wraps ort_training_api->LazyResetGrad.
-OrtStatus *LazyResetGrad(OrtTrainingSession *training_session);
-
-// Wraps ort_training_api->SaveCheckpoint.
-OrtStatus *SaveCheckpoint(OrtCheckpointState *checkpoint, char *path, size_t include_optimizer);
-
-// Wraps ort_training_api->ExportModel.
-OrtStatus *ExportModel(OrtTrainingSession *training_session, char *path, size_t outputs_len, char **output_names);
-
-// Wraps ort_training_api->ReleaseTrainingSession.
-void ReleaseOrtTrainingSession(OrtTrainingSession *session);
-
-// Wraps ort_training_api->ReleaseCheckpointState.
-void ReleaseCheckpointState(OrtCheckpointState *checkpoint);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -171,3 +171,77 @@ type ArbitraryTensor = Value
 // As with the ArbitraryTensor type, this type alias only exists to facilitate
 // renaming an old type without breaking existing code.
 type TensorInternalData = ValueInternalData
+
+var TrainingAPIRemovedError error = fmt.Errorf("Support for the training " +
+	"API has been removed from onnxruntime_go following its deprecation in " +
+	"onnxruntime versions 1.19.2 and later. The last revision of " +
+	"onnxruntime_go supporting the training API is version v1.12.1")
+
+// Support for TrainingSessions has been removed from onnxruntime_go following
+// the deprecation of the training API in onnxruntime 1.20.0.
+type TrainingSession struct{}
+
+// Always returns TrainingAPIRemovedError.
+func (s *TrainingSession) ExportModel(path string, outputNames []string) error {
+	return TrainingAPIRemovedError
+}
+
+// Always returns TrainingAPIRemovedError.
+func (s *TrainingSession) SaveCheckpoint(path string,
+	saveOptimizerState bool) error {
+	return TrainingAPIRemovedError
+}
+
+// Always returns TrainingAPIRemovedError.
+func (s *TrainingSession) Destroy() error {
+	return TrainingAPIRemovedError
+}
+
+// Always returns TrainingAPIRemovedError.
+func (s *TrainingSession) TrainStep() error {
+	return TrainingAPIRemovedError
+}
+
+// Always returns TrainingAPIRemovedError.
+func (s *TrainingSession) OptimizerStep() error {
+	return TrainingAPIRemovedError
+}
+
+// Always returns TrainingAPIRemovedError.
+func (s *TrainingSession) LazyResetGrad() error {
+	return TrainingAPIRemovedError
+}
+
+// Support for TrainingInputOutputNames has been removed from onnxruntime_go
+// following the deprecation of the training API in onnxruntime 1.20.0.
+type TrainingInputOutputNames struct {
+	TrainingInputNames  []string
+	EvalInputNames      []string
+	TrainingOutputNames []string
+	EvalOutputNames     []string
+}
+
+// Always returns (nil, TrainingAPIRemovedError).
+func GetInputOutputNames(checkpointStatePath string, trainingModelPath string,
+	evalModelPath string) (*TrainingInputOutputNames, error) {
+	return nil, TrainingAPIRemovedError
+}
+
+// Always returns false.
+func IsTrainingSupported() bool {
+	return false
+}
+
+// Always returns (nil, TrainingAPIRemovedError).
+func NewTrainingSessionWithOnnxData(checkpointData, trainingData, evalData,
+	optimizerData []byte, inputs, outputs []Value,
+	options *SessionOptions) (*TrainingSession, error) {
+	return nil, TrainingAPIRemovedError
+}
+
+// Always returns (nil, TrainingAPIRemovedError).
+func NewTrainingSession(checkpointStatePath, trainingModelPath, evalModelPath,
+	optimizerModelPath string, inputs, outputs []Value,
+	options *SessionOptions) (*TrainingSession, error) {
+	return nil, TrainingAPIRemovedError
+}

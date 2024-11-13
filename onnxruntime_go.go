@@ -90,9 +90,6 @@ func InitializeEnvironment() error {
 		return fmt.Errorf("Platform-specific initialization failed: %w", e)
 	}
 
-	// Get the training API pointer if it is supported.
-	C.SetTrainingApi()
-
 	name := C.CString("Golang onnxruntime environment")
 	defer C.free(unsafe.Pointer(name))
 	status := C.CreateOrtEnv(name, &ortEnv)
@@ -882,6 +879,90 @@ func (t *CustomDataTensor) ZeroContents() {
 func (t *CustomDataTensor) GetData() []byte {
 	return t.data
 }
+
+// Scalar is like a tensor but the underlying go slice is of length 1 and it
+// has no dimension. It was introduced for use with the training API, but
+// remains supported since it conceivable will have use outside of the training
+// API.
+type Scalar[T TensorData] struct {
+	data     []T
+	dataSize uintptr
+	ortValue *C.OrtValue
+}
+
+// Always returns nil for Scalars.
+func (s *Scalar[T]) GetShape() Shape {
+	return nil
+}
+
+func (s *Scalar[T]) ZeroContents() {
+	C.memset(unsafe.Pointer(&s.data[0]), 0, C.size_t(s.dataSize))
+}
+
+func (s *Scalar[T]) Destroy() error {
+	C.ReleaseOrtValue(s.ortValue)
+	s.ortValue = nil
+	s.data = nil
+	s.dataSize = 0
+	return nil
+}
+
+// GetData returns the undelying data for the scalar. If you want to set the
+// scalar's data, use Set.
+func (t *Scalar[T]) GetData() T {
+	return t.data[0]
+}
+
+// Changes the underlying value of the scalar to the new value.
+func (t *Scalar[T]) Set(value T) {
+	t.data = []T{value}
+}
+
+func (t *Scalar[T]) DataType() C.ONNXTensorElementDataType {
+	return GetTensorElementDataType[T]()
+}
+
+func (t *Scalar[_]) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
+		ortValue: t.ortValue,
+	}
+}
+
+func (t *Scalar[_]) GetONNXType() ONNXType {
+	return ONNXTypeTensor
+}
+
+// NewEmptyScalar creates a new scalar of type T.
+func NewEmptyScalar[T TensorData]() (*Scalar[T], error) {
+	var data T
+	return NewScalar(data)
+}
+
+// NewScalar creates a new scalar of type T backed by a value of type T.
+// Note that, differently from tensors, this is not a []T but just a value T.
+func NewScalar[T TensorData](data T) (*Scalar[T], error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+
+	dataSlice := []T{data}
+	var ortValue *C.OrtValue
+	dataType := GetTensorElementDataType[T]()
+	dataSize := unsafe.Sizeof(dataSlice[0]) * uintptr(1)
+
+	status := C.CreateOrtTensorWithShape(unsafe.Pointer(&dataSlice[0]),
+	C.size_t(dataSize), nil, C.int64_t(0), ortMemoryInfo, dataType, &ortValue)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	toReturn := Scalar[T]{
+		data:     dataSlice,
+		dataSize: dataSize,
+		ortValue: ortValue,
+	}
+	return &toReturn, nil
+}
+
 
 // Holds options required when enabling the CUDA backend for a session. This
 // struct wraps C onnxruntime types; users must create instances of this using
