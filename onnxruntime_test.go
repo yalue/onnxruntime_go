@@ -1461,6 +1461,41 @@ func TestSessionFromDataBuffer(t *testing.T) {
 	}
 }
 
+func TestScalar(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	s, e := NewEmptyScalar[float32]()
+	if e != nil {
+		t.Fatalf("Error creating empty scalar: %s\n", e)
+	}
+	if s.GetData() != 0.0 {
+		t.Fatalf("Empty scalar not initialized to 0: %s\n", e)
+	}
+	e = s.Destroy()
+	if e != nil {
+		t.Fatalf("Failed destroying scalar: %s\n", e)
+	}
+	s2, e := NewScalar(int64(1337))
+	if e != nil {
+		t.Fatalf("Failed creating int64 scalar: %s\n", e)
+	}
+	defer s2.Destroy()
+	contents := s2.GetData()
+	if contents != 1337 {
+		t.Fatalf("Incorrect initial contents of s2: %d\n", contents)
+	}
+	s2.ZeroContents()
+	contents = s2.GetData()
+	if contents != 0 {
+		t.Fatalf("Incorrect value of s2 after zeroing: %d\n", contents)
+	}
+	s2.Set(1234)
+	contents = s2.GetData()
+	if contents != 1234 {
+		t.Fatalf("Incorrect value of s2: %d (expected 1234)\n", contents)
+	}
+}
+
 // See the comment in generate_network_big_compute.py for information about
 // the inputs and outputs used for testing or benchmarking session options.
 func prepareBenchmarkTensors(t testing.TB, seed int64) (*Tensor[float32],
