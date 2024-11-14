@@ -41,8 +41,7 @@ Tests
 -----
 
  - All new features and bugfixes must include a basic unit test (in
-   `onnxruntime_test.go` or `onnxruntime_training_test.go`) to serve as a
-   sanity check.
+   `onnxruntime_test.go`) to serve as a sanity check.
 
  - If a test is for a platform-dependent or execution-provider-dependent
    feature, the test must be skipped if run on an unsupported system.
@@ -62,8 +61,8 @@ Adding New Files
 
  - Apart from testing data, try not to add new source files.
 
- - Do not add third-party code or headers.  The only exceptions for now are
-   `onnxruntime_c_api.h` and `onnxruntime_training_c_api.h`.
+ - Do not add third-party code or headers.  The only exception for now is
+   `onnxruntime_c_api.h`.
 
  - No C++ at all. Developing Go-to-C wrappers is annoying enough as it is.
 

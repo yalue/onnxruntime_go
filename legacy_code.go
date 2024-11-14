@@ -1,8 +1,7 @@
 package onnxruntime_go
 
-// This file contains Session types that we maintain for compatibility
-// purposes; the main onnxruntime_go.go file is dedicated to AdvancedSession
-// now.
+// This file contains code and types that we maintain for compatibility
+// purposes, but is not expected to be regularly maintained or udpated.
 
 import (
 	"fmt"

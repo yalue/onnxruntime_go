@@ -882,8 +882,7 @@ func (t *CustomDataTensor) GetData() []byte {
 
 // Scalar is like a tensor but the underlying go slice is of length 1 and it
 // has no dimension. It was introduced for use with the training API, but
-// remains supported since it conceivable will have use outside of the training
-// API.
+// remains supported since it may be useful apart from the training API.
 type Scalar[T TensorData] struct {
 	data     []T
 	dataSize uintptr
