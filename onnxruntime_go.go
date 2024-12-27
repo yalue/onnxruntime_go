@@ -950,7 +950,7 @@ func NewScalar[T TensorData](data T) (*Scalar[T], error) {
 	dataSize := unsafe.Sizeof(dataSlice[0]) * uintptr(1)
 
 	status := C.CreateOrtTensorWithShape(unsafe.Pointer(&dataSlice[0]),
-	C.size_t(dataSize), nil, C.int64_t(0), ortMemoryInfo, dataType, &ortValue)
+		C.size_t(dataSize), nil, C.int64_t(0), ortMemoryInfo, dataType, &ortValue)
 	if status != nil {
 		return nil, statusToError(status)
 	}
@@ -961,7 +961,6 @@ func NewScalar[T TensorData](data T) (*Scalar[T], error) {
 	}
 	return &toReturn, nil
 }
-
 
 // Holds options required when enabling the CUDA backend for a session. This
 // struct wraps C onnxruntime types; users must create instances of this using
@@ -1733,10 +1732,11 @@ func (s *DynamicAdvancedSession) Destroy() error {
 	return s.s.Destroy()
 }
 
-func createTensorWithCData[T TensorData](shape Shape, data unsafe.Pointer) (*Tensor[T], error) {
-	totalSize := shape.FlattenedSize()
-	actualData := unsafe.Slice((*T)(data), totalSize)
-	dataCopy := make([]T, totalSize)
+func createTensorWithCData[T TensorData](shape Shape,
+	data unsafe.Pointer) (*Tensor[T], error) {
+	totalCount := shape.FlattenedSize()
+	actualData := unsafe.Slice((*T)(data), totalCount)
+	dataCopy := make([]T, totalCount)
 	copy(dataCopy, actualData)
 	return NewTensor[T](shape, dataCopy)
 }
@@ -1871,6 +1871,8 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 		return createTensorWithCData[uint32](shape, tensorData)
 	case TensorElementDataTypeUint64:
 		return createTensorWithCData[uint64](shape, tensorData)
+	case TensorElementDataTypeBool:
+		return createTensorWithCData[bool](shape, tensorData)
 	default:
 		totalSize := shape.FlattenedSize()
 		actualData := unsafe.Slice((*byte)(tensorData), totalSize)

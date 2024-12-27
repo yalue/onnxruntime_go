@@ -129,7 +129,7 @@ func TestCreateTensor(t *testing.T) {
 	}
 	defer tensor1.Destroy()
 	if len(tensor1.GetData()) != 6 {
-		t.Logf("Incorrect data length for tensor1: %d\n",
+		t.Fatalf("Incorrect data length for tensor1: %d\n",
 			len(tensor1.GetData()))
 	}
 	// Make sure that the underlying tensor created a copy of the shape we
@@ -164,6 +164,43 @@ func TestCreateTensor(t *testing.T) {
 	if len(tensor2.GetData()) != 10 {
 		t.Fatalf("New tensor data contains %d elements, when it should "+
 			"contain 10.\n", len(tensor2.GetData()))
+	}
+}
+
+func TestBoolTensor(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	data := []bool{true, false, true, true}
+	tensor1, e := NewTensor(NewShape(4), data)
+	if e != nil {
+		t.Fatalf("Failed creating bool tensor: %s\n", e)
+	}
+	defer tensor1.Destroy()
+	if len(tensor1.GetData()) != 4 {
+		t.Fatalf("Incorrect data length for bool tensor: %d\n",
+			len(tensor1.GetData()))
+	}
+	if !tensor1.GetData()[3] {
+		t.Errorf("Expected tensor1[3] to be true; it wasn't.\n")
+	}
+	if tensor1.GetData()[1] {
+		t.Errorf("Expected tensor1[1] to be false; it wasn't.\n")
+	}
+	tensor1.ZeroContents()
+	for _, b := range data {
+		if b {
+			t.Errorf("Zeroing tensor1 didn't set its data slice to false.\n")
+		}
+	}
+	tensor2, e := NewEmptyTensor[bool](tensor1.GetShape())
+	if e != nil {
+		t.Fatalf("Error creating empty bool tensor: %s\n", e)
+	}
+	defer tensor2.Destroy()
+	for _, b := range tensor2.GetData() {
+		if b {
+			t.Errorf("A new empty bool tensor wasn't initialized to false.\n")
+		}
 	}
 }
 
