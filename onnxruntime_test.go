@@ -1576,31 +1576,6 @@ func testBigSessionWithOptions(t *testing.T, options *SessionOptions) {
 	}
 }
 
-// Used when benchmarking different execution providers. Otherwise, basically
-// identical in usage to testBigSessionWithOptions.
-func benchmarkBigSessionWithOptions(b *testing.B, options *SessionOptions) {
-	// It's also OK for the caller to have already stopped the timer, but we'll
-	// make sure it's stopped here.
-	b.StopTimer()
-	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
-	defer input.Destroy()
-	defer output.Destroy()
-	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
-		[]string{"Input"}, []string{"Output"},
-		[]Value{input}, []Value{output}, options)
-	if e != nil {
-		b.Fatalf("Error creating session: %s\n", e)
-	}
-	defer session.Destroy()
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		e = session.Run()
-		if e != nil {
-			b.Fatalf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
-		}
-	}
-}
-
 func TestSessionOptions(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
@@ -1626,6 +1601,70 @@ func TestSessionOptions(t *testing.T) {
 		t.Fatalf("Error setting memory pattern: %s\n", e)
 	}
 	testBigSessionWithOptions(t, options)
+}
+
+func TestSessionOptionsConfig(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+	hasEntry, e := options.HasSessionConfigEntry("whatever lol")
+	if e != nil {
+		t.Errorf("Got error calling HasSessionConfigEntry for invalid "+
+			"key: %s\n", e)
+	}
+	if hasEntry {
+		t.Errorf("HasSessionConfigEntry didn't return false for bad key\n")
+	}
+	_, e = options.GetSessionConfigEntry("hahahaha whatever!!")
+	if e == nil {
+		t.Fatalf("Didn't get error calling GetSessionConfigEntry for " +
+			"invalid key.\n")
+	}
+	t.Logf("Got expected error when getting session config entry for "+
+		"invalid key: %s\n", e)
+	key := "beans factor"
+	expectedValue := "extremely high"
+	e = options.AddSessionConfigEntry(key, expectedValue)
+	if e != nil {
+		t.Fatalf("Got error setting arbitrary config entry: %s\n", e)
+	}
+	value, e := options.GetSessionConfigEntry(key)
+	if e != nil {
+		t.Fatalf("Error getting config entry %s: %s\n", key, e)
+	}
+	if value != expectedValue {
+		t.Errorf("Got incorrect value for config entry %s: expected %s, "+
+			"got %s\n", key, expectedValue, value)
+	}
+}
+
+// Used when benchmarking different execution providers. Otherwise, basically
+// identical in usage to testBigSessionWithOptions.
+func benchmarkBigSessionWithOptions(b *testing.B, options *SessionOptions) {
+	// It's also OK for the caller to have already stopped the timer, but we'll
+	// make sure it's stopped here.
+	b.StopTimer()
+	input, output := prepareBenchmarkTensors(b, benchmarkRNGSeed)
+	defer input.Destroy()
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_compute.onnx",
+		[]string{"Input"}, []string{"Output"},
+		[]Value{input}, []Value{output}, options)
+	if e != nil {
+		b.Fatalf("Error creating session: %s\n", e)
+	}
+	defer session.Destroy()
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Fatalf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
+		}
+	}
 }
 
 // Very similar to TestSessionOptions, but structured as a benchmark.
@@ -1656,6 +1695,33 @@ func BenchmarkOpSingleThreaded(b *testing.B) {
 
 func BenchmarkOpMultiThreaded(b *testing.B) {
 	runNumThreadsBenchmark(b, 0)
+}
+
+// Arbitrarily sets some config options; mostly just to see if they have an
+// impact on performance, but also to just make sure setting the options
+// doesn't cause errors.
+func BenchmarkSessionWithNoSpinningOptions(b *testing.B) {
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	options, e := NewSessionOptions()
+	if e != nil {
+		b.Fatalf("Error creating options: %s\n", e)
+	}
+	defer options.Destroy()
+	e = options.AddSessionConfigEntry("session.inter_op.allow_spinning", "0")
+	if e != nil {
+		b.Fatalf("Error setting inter-op spinning config: %s\n", e)
+	}
+	e = options.AddSessionConfigEntry("session.intra_op.allow_spinning", "0")
+	if e != nil {
+		b.Fatalf("Error setting intra-op spinning config: %s\n", e)
+	}
+	e = options.AddSessionConfigEntry("session.force_spinning_stop", "1")
+	if e != nil {
+		b.Fatalf("Error setting force spinning stop config: %s\n", e)
+	}
+	benchmarkBigSessionWithOptions(b, options)
 }
 
 // Creates a SessionOptions struct that's configured to enable CUDA. Skips the

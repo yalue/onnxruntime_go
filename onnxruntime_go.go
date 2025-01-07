@@ -1140,6 +1140,69 @@ func (o *SessionOptions) Destroy() error {
 	return nil
 }
 
+// Returns true, nil if the SessionOptions has a configuration entry with the
+// given key. Returns false if the key isn't defined. Returns an error if
+// onnxruntime indicates an error, though it isn't clear from the docs what
+// may cause an error to occur here. See also GetSessionConfigEntry and
+// AddSessionConfigEntry.
+func (o *SessionOptions) HasSessionConfigEntry(key string) (bool, error) {
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	var out C.int
+	status := C.HasSessionConfigEntry(o.o, cKey, &out)
+	if status != nil {
+		return false, statusToError(status)
+	}
+	return out != 0, nil
+}
+
+// Returns the session config entry corresponding to the given key, or an error
+// if one occurs. Returns an error if the key doesn't exist, so it may be
+// cheaper to check for the key with HasSessionConfigEntry first. See also
+// AddSessionConfigEntry.
+func (o *SessionOptions) GetSessionConfigEntry(key string) (string, error) {
+	var neededSize C.size_t
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	// First check for the size of the key. (This includes the null terminator)
+	status := C.GetSessionConfigEntry(o.o, cKey, nil, &neededSize)
+	if status != nil {
+		return "", fmt.Errorf("Error determining size of key %s: %w", key,
+			statusToError(status))
+	}
+	// Should catch the case if the entry was an empty string.
+	if neededSize <= 1 {
+		return "", nil
+	}
+
+	// We'll allocate the buffer to hold the string in Go to keep the C simpler
+	resultBuffer := make([]C.char, neededSize)
+	status = C.GetSessionConfigEntry(o.o, cKey, &(resultBuffer[0]),
+		&neededSize)
+	if status != nil {
+		return "", fmt.Errorf("Error getting contents of key %s: %w", key,
+			statusToError(status))
+	}
+	toReturn := C.GoString(&(resultBuffer[0]))
+	return toReturn, nil
+}
+
+// Sets a session configuration key to the given value. See the
+// onnxruntime_session_options_config_keys.h file in the onnxruntime sources
+// for documentation on valid keys and values. If the key was already set, this
+// will overwrite its old setting with the given value.
+func (o *SessionOptions) AddSessionConfigEntry(key, value string) error {
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	cValue := C.CString(value)
+	defer C.free(unsafe.Pointer(cValue))
+	status := C.AddSessionConfigEntry(o.o, cKey, cValue)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Sets the number of threads used to parallelize execution within onnxruntime
 // graph nodes. A value of 0 uses the default number of threads.
 func (o *SessionOptions) SetIntraOpNumThreads(n int) error {

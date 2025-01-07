@@ -72,6 +72,16 @@ OrtStatus *CreateSessionOptions(OrtSessionOptions **o);
 // Wraps ort_api->ReleaseSessionOptions
 void ReleaseSessionOptions(OrtSessionOptions *o);
 
+// Wraps ort_api->AddSessionConfigEntry
+OrtStatus *AddSessionConfigEntry(OrtSessionOptions *o, char *key, char *value);
+
+// Wraps ort_api->HasSessionConfigEntry
+OrtStatus *HasSessionConfigEntry(OrtSessionOptions *o, char *key, int *result);
+
+// Wraps ort_api->GetSessionConfigEntry
+OrtStatus *GetSessionConfigEntry(OrtSessionOptions *o, char *key, char *result,
+    size_t *required_size);
+
 // Wraps ort_api->SetIntraOpNumThreads
 OrtStatus *SetIntraOpNumThreads(OrtSessionOptions *o, int n);
 
