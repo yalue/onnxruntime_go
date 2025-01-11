@@ -1118,6 +1118,24 @@ func NewTensorRTProviderOptions() (*TensorRTProviderOptions, error) {
 	}, nil
 }
 
+// Wraps the ExecutionMode enum in C.
+type ExecutionMode int
+
+const (
+	ExecutionModeSequential = C.ORT_SEQUENTIAL
+	ExecutionModeParallel   = C.ORT_PARALLEL
+)
+
+func (m ExecutionMode) String() string {
+	switch m {
+	case ExecutionModeSequential:
+		return "ORT_SEQUENTIAL"
+	case ExecutionModeParallel:
+		return "ORT_PARALLEL"
+	}
+	return fmt.Sprintf("Invalid/unknown execution mode: %d", int(m))
+}
+
 // Used to set options when creating an ONNXRuntime session. There is currently
 // not a way to change options after the session is created, apart from
 // destroying the session and creating a new one. This struct opaquely wraps a
@@ -1137,6 +1155,16 @@ func (o *SessionOptions) Destroy() error {
 	}
 	C.ReleaseSessionOptions(o.o)
 	o.o = nil
+	return nil
+}
+
+// Sets the session's execution mode. The newMode must be
+// ExecutionModeSequential or ExecutionModeParallel.
+func (o *SessionOptions) SetExecutionMode(newMode ExecutionMode) error {
+	status := C.SetSessionExecutionMode(o.o, C.int(newMode))
+	if status != nil {
+		return statusToError(status)
+	}
 	return nil
 }
 

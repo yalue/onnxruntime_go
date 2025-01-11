@@ -89,6 +89,10 @@ void ReleaseSessionOptions(OrtSessionOptions *o) {
   ort_api->ReleaseSessionOptions(o);
 }
 
+OrtStatus *SetSessionExecutionMode(OrtSessionOptions *o, int new_mode) {
+  return ort_api->SetSessionExecutionMode(o, new_mode);
+}
+
 OrtStatus *AddSessionConfigEntry(OrtSessionOptions *o, char *key,
     char *value) {
   return ort_api->AddSessionConfigEntry(o, key, value);

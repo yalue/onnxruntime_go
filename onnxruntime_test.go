@@ -1697,6 +1697,53 @@ func BenchmarkOpMultiThreaded(b *testing.B) {
 	runNumThreadsBenchmark(b, 0)
 }
 
+// Used for benchmarking the network with big fanout, both in sequential and
+// parallel mode.
+func runParallelismBenchmark(b *testing.B, parallel bool) {
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	options, e := NewSessionOptions()
+	if e != nil {
+		b.Fatalf("Error creating options: %s\n", e)
+	}
+	defer options.Destroy()
+	if parallel {
+		e = options.SetExecutionMode(ExecutionModeParallel)
+	} else {
+		e = options.SetExecutionMode(ExecutionModeSequential)
+	}
+	if e != nil {
+		b.Fatalf("Error setting execution mode: %s\n", e)
+	}
+	input := newTestTensor[float32](b, NewShape(1, 4))
+	defer input.Destroy()
+	output := newTestTensor[float32](b, NewShape(4))
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example_big_fanout.onnx",
+		[]string{"input"}, []string{"output"}, []Value{input}, []Value{output},
+		options)
+	if e != nil {
+		b.Fatalf("Error creating session: %s\n", e)
+	}
+	defer session.Destroy()
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		e = session.Run()
+		if e != nil {
+			b.Fatalf("Error running iteration %d/%d: %s\n", n+1, b.N, e)
+		}
+	}
+}
+
+func BenchmarkFanoutWithoutParallelism(b *testing.B) {
+	runParallelismBenchmark(b, false)
+}
+
+func BenchmarkFanoutWithParallelism(b *testing.B) {
+	runParallelismBenchmark(b, true)
+}
+
 // Arbitrarily sets some config options; mostly just to see if they have an
 // impact on performance, but also to just make sure setting the options
 // doesn't cause errors.
