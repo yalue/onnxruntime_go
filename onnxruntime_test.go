@@ -1533,6 +1533,100 @@ func TestScalar(t *testing.T) {
 	}
 }
 
+func TestIoBinding(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	// TODO: Create a slightly better test for I/O bindings:
+	//  - Maybe make it something with a fixed input that will perform better
+	//    if bound and unchanged.
+	//  - Have multiple outputs, including ones with multibyte chars in their
+	//    names (if this is supported). This would better exercise the
+	//    GetBoundOutputNames function.
+	filePath := "test_data/example ż 大 김.onnx"
+
+	session, e := NewDynamicAdvancedSession(filePath, nil, nil, nil)
+	if e != nil {
+		t.Fatalf("Error creating session without specifying input names: %s\n",
+			e)
+	}
+	defer session.Destroy()
+	binding, e := session.CreateIoBinding()
+	if e != nil {
+		t.Fatalf("Error creating I/O binding object: %s\n", e)
+	}
+	defer func() {
+		e := binding.Destroy()
+		if e != nil {
+			t.Logf("Error destroying I/O binding: %s\n", e)
+			t.Fail()
+		}
+	}()
+
+	// Run the session with the bindings and allow it to allocate the outputs
+	// automatically.
+	inputData := []int32{1000, 337}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	e = binding.BindInput("in", input)
+	if e != nil {
+		t.Fatalf("Error binding input: %s\n", e)
+	}
+	output, e := NewEmptyTensor[int32](NewShape(1))
+	if e != nil {
+		t.Fatalf("Error creating output tensor: %s\n", e)
+	}
+	defer output.Destroy()
+	e = binding.BindOutput("out", output)
+	if e != nil {
+		t.Fatalf("Error binding output: %s\n", e)
+	}
+
+	e = session.RunWithBinding(binding)
+	if e != nil {
+		t.Fatalf("Error running session with I/O binding: %s\n", e)
+	}
+	outputNames, e := binding.GetBoundOutputNames()
+	if e != nil {
+		t.Fatalf("Error getting bound output names: %s\n", e)
+	}
+	if len(outputNames) != 1 {
+		t.Fatalf("Expected 1 output name, got %d\n", len(outputNames))
+	}
+	if outputNames[0] != "out" {
+		t.Fatalf("Incorrect bound output name, expected \"out\", got \"%s\"\n",
+			outputNames[0])
+	}
+
+	// Ensure the actual output is what we expect
+	outputValues, e := binding.GetBoundOutputValues()
+	if e != nil {
+		t.Fatalf("Error getting bound output values: %s\n", e)
+	}
+	defer func() {
+		for _, v := range outputValues {
+			v.Destroy()
+		}
+	}()
+	if len(outputValues) != 1 {
+		t.Fatalf("Expected 1 output value, got %d\n", len(outputValues))
+	}
+	v := outputValues[0]
+	if !v.GetShape().Equals(NewShape(1)) {
+		t.Fatalf("Incorrect output shape, expected [1], got %s\n", v.GetShape())
+	}
+	outputTensor, ok := v.(*Tensor[int32])
+	if !ok {
+		t.Fatalf("Bad output type\n")
+	}
+	if outputTensor.GetData()[0] != 1337 {
+		t.Fatalf("Bad output value, expected 1337, got %d\n",
+			outputTensor.GetData()[0])
+	}
+}
+
 // See the comment in generate_network_big_compute.py for information about
 // the inputs and outputs used for testing or benchmarking session options.
 func prepareBenchmarkTensors(t testing.TB, seed int64) (*Tensor[float32],
@@ -1639,6 +1733,49 @@ func TestSessionOptionsConfig(t *testing.T) {
 	if value != expectedValue {
 		t.Errorf("Got incorrect value for config entry %s: expected %s, "+
 			"got %s\n", key, expectedValue, value)
+	}
+}
+
+func TestGraphOptimizationLevel(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+	e = options.SetGraphOptimizationLevel(GraphOptimizationLevel(-24))
+	if e == nil {
+		t.Fatalf("Didn't get expected error setting bad optimization level\n")
+	}
+	t.Logf("Got expected error when setting bad optimization level: %s\n", e)
+	e = options.SetGraphOptimizationLevel(GraphOptimizationLevelDisableAll)
+	if e != nil {
+		t.Fatalf("Error setting optimization level: %s\n", e)
+	}
+
+	// Actually make sure the network runs with optimizations disabled.
+	inputData := []int32{123, 123}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
+	session, e := NewAdvancedSession("test_data/example ż 大 김.onnx",
+		[]string{"in"}, []string{"out"}, []Value{input}, []Value{output},
+		options)
+	if e != nil {
+		t.Fatalf("Failed creating session with optimizations off: %s\n", e)
+	}
+	e = session.Run()
+	if e != nil {
+		t.Fatalf("Error running session with optimizations off: %s\n", e)
+	}
+	result := output.GetData()[0]
+	if result != 246 {
+		t.Fatalf("Got the incorrect session result: %d\n", result)
 	}
 }
 

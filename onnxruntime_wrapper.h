@@ -75,6 +75,9 @@ void ReleaseSessionOptions(OrtSessionOptions *o);
 // Wraps ort_api->SetSessionExecutionMode
 OrtStatus *SetSessionExecutionMode(OrtSessionOptions *o, int new_mode);
 
+// Wraps ort_api->SetSessionGraphOptimizationLevel
+OrtStatus *SetSessionGraphOptimizationLevel(OrtSessionOptions *o, int level);
+
 // Wraps ort_api->AddSessionConfigEntry
 OrtStatus *AddSessionConfigEntry(OrtSessionOptions *o, char *key, char *value);
 
@@ -150,13 +153,45 @@ OrtStatus *CreateSessionFromFile(char *model_path, OrtEnv *env,
   OrtSession **out, OrtSessionOptions *options);
 
 // Runs an ORT session with the given input and output tensors, along with
-// their names. In our use case, outputs must NOT be NULL.
+// their names.
 OrtStatus *RunOrtSession(OrtSession *session,
   OrtValue **inputs, char **input_names, int input_count,
   OrtValue **outputs, char **output_names, int output_count);
 
+// Wraps ort_api->RunWithBinding.
+OrtStatus *RunSessionWithBinding(OrtSession *session, OrtIoBinding *b);
+
 // Wraps ort_api->ReleaseSession
 void ReleaseOrtSession(OrtSession *session);
+
+// Wraps ort_api->CreateIoBinding
+OrtStatus *CreateIoBinding(OrtSession *session, OrtIoBinding **out);
+
+// Wraps ort_api->ReleaseIoBinding
+void ReleaseIoBinding(OrtIoBinding *b);
+
+// Wraps ort_api->BindInput
+OrtStatus *BindInput(OrtIoBinding *b, char *name, OrtValue *value);
+
+// Wraps ort_api->BindOutput
+OrtStatus *BindOutput(OrtIoBinding *b, char *name, OrtValue *value);
+
+// Wraps ort_api->GetBoundOutputNames. Uses the default allocator. The caller
+// must free the buffer and lengths using FreeWithDefaultOrtAllocator after
+// this is done.
+OrtStatus *GetBoundOutputNames(OrtIoBinding *b, char **buffer,
+  size_t **lengths, size_t *count);
+
+// Wraps ort_api->GetBoundOutputNames. Uses the default allocator, and the
+// caller must free the buffer of values using FreeWithDefaultOrtAllocator.
+OrtStatus *GetBoundOutputValues(OrtIoBinding *b, OrtValue ***buffer,
+  size_t *count);
+
+// Wraps ort_api->ClearBoundInputs.
+void ClearBoundInputs(OrtIoBinding *b);
+
+// Wraps ort_api->ClearBoundOutputs.
+void ClearBoundOutputs(OrtIoBinding *b);
 
 // Wraps ort_api->SessionGetInputCount.
 OrtStatus *SessionGetInputCount(OrtSession *session, size_t *result);

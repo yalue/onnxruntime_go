@@ -6,6 +6,7 @@ package onnxruntime_go
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 )
 
@@ -56,9 +57,9 @@ func statusToError(status *C.OrtStatus) error {
 		return nil
 	}
 	msg := C.GetErrorMessage(status)
-	toReturn := C.GoString(msg)
+	goMsg := C.GoString(msg)
 	C.ReleaseOrtStatus(status)
-	return fmt.Errorf("%s", toReturn)
+	return fmt.Errorf("%s", strings.TrimSpace(goMsg))
 }
 
 // Use this function to set the path to the "onnxruntime.so" or
@@ -486,6 +487,31 @@ func (t TensorElementDataType) String() string {
 		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_INT4"
 	}
 	return fmt.Sprintf("Unknown tensor element data type: %d", int(t))
+}
+
+// Wraps the GraphOptimizationLevel enum in C.
+type GraphOptimizationLevel int
+
+const (
+	GraphOptimizationLevelDisableAll     = C.ORT_DISABLE_ALL
+	GraphOptimizationLevelEnableBasic    = C.ORT_ENABLE_BASIC
+	GraphOptimizationLevelEnableExtended = C.ORT_ENABLE_EXTENDED
+	GraphOptimizationLevelEnableAll      = C.ORT_ENABLE_ALL
+)
+
+func (l GraphOptimizationLevel) String() string {
+	switch l {
+	case GraphOptimizationLevelDisableAll:
+		return "ORT_DISABLE_ALL"
+	case GraphOptimizationLevelEnableBasic:
+		return "ORT_ENABLE_BASIC"
+	case GraphOptimizationLevelEnableExtended:
+		return "ORT_ENABLE_EXTENDED"
+	case GraphOptimizationLevelEnableAll:
+		return "ORT_ENABLE_ALL"
+	}
+	return fmt.Sprintf("<Invalid or unknown GraphOptimizationLevel %d>",
+		int(l))
 }
 
 // This wraps an ONNX_TYPE_SEQUENCE OrtValue. Satisfies the Value interface,
@@ -1168,6 +1194,17 @@ func (o *SessionOptions) SetExecutionMode(newMode ExecutionMode) error {
 	return nil
 }
 
+// Sets the optimization level to apply when loading a graph. Refer to
+// the C API documentation for SetSessionGraphOptimizationLevel.
+func (o *SessionOptions) SetGraphOptimizationLevel(
+	level GraphOptimizationLevel) error {
+	status := C.SetSessionGraphOptimizationLevel(o.o, C.int(level))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Returns true, nil if the SessionOptions has a configuration entry with the
 // given key. Returns false if the key isn't defined. Returns an error if
 // onnxruntime indicates an error, though it isn't clear from the docs what
@@ -1755,6 +1792,203 @@ func (s *AdvancedSession) Run() error {
 	return nil
 }
 
+// Wraps the OrtIoBinding instance. Must be created using
+// DynamicAdvancedSession's CreateIoBinding method and Destroy'ed when no
+// longer needed. (Only DynamicAdvancedSession is supported for this, since
+// a regular AdvancedSession requires specifying input and output tensors at
+// session creation time.)
+type IoBinding struct {
+	o *C.OrtIoBinding
+}
+
+// Creates and returns an IoBinding instance associated with the session. The
+// I/O binding can be used to avoid unecessary copies to or from device memory,
+// for sessions on different devices. The returned IoBinding must be freed
+// using Destroy() when it is no longer needed.
+func (s *DynamicAdvancedSession) CreateIoBinding() (*IoBinding, error) {
+	var o *C.OrtIoBinding
+	status := C.CreateIoBinding(s.s.ortSession, &o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &IoBinding{
+		o: o,
+	}, nil
+}
+
+// Must be called to free resources associated with the IoBinding once it's
+// no longer needed.
+func (b *IoBinding) Destroy() error {
+	if b.o != nil {
+		C.ReleaseIoBinding(b.o)
+		b.o = nil
+	}
+	return nil
+}
+
+// Binds a value to the named input, to be used when RunWithBinding is called.
+func (b *IoBinding) BindInput(name string, value Value) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	ortValue := value.GetInternals().ortValue
+	status := C.BindInput(b.o, cName, ortValue)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Binds a value to the named output, to be used when RunWithBinding is called.
+func (b *IoBinding) BindOutput(name string, value Value) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	ortValue := value.GetInternals().ortValue
+	status := C.BindOutput(b.o, cName, ortValue)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Returns a list of bound output names, which will be returned in the same
+// order that outputs will be returned when GetBoundOutputValues is called.
+func (b *IoBinding) GetBoundOutputNames() ([]string, error) {
+	var resultBuffer *C.char
+	var resultCount C.size_t
+	var resultSizes *C.size_t
+	status := C.GetBoundOutputNames(b.o, &resultBuffer, &resultSizes,
+		&resultCount)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	// The doc says no allocation occurs if the number of results is 0.
+	if resultCount == 0 {
+		return []string{}, nil
+	}
+
+	// Start by getting go slice views of the C buffers to make it easier to
+	// work with.
+	sizesSlice := unsafe.Slice(resultSizes, resultCount)
+	totalSize := uint64(0)
+	// There is likely a more efficient way, but it's much easier to just get
+	// a go slice of the entire buffer. NOTE: The strings in this buffer are
+	// *not* null terminated!
+	for _, s := range sizesSlice {
+		totalSize += uint64(s)
+	}
+	charsSlice := unsafe.Slice((*byte)(unsafe.Pointer(resultBuffer)),
+		totalSize)
+
+	// We'll take advantage of the byte-slice-to-string conversion to copy the
+	// data into go-managed memory.
+	toReturn := make([]string, resultCount)
+	prevEndOffset := uint64(0)
+	for i, stringLength := range sizesSlice {
+		toReturn[i] = string(charsSlice[prevEndOffset:stringLength])
+		prevEndOffset += uint64(stringLength)
+	}
+
+	// Finally, free the onnxruntime-allocated memory buffers. Always attempt
+	// to free both buffers, even if one returns an error.
+	status1 := C.FreeWithDefaultORTAllocator(unsafe.Pointer(resultSizes))
+	status2 := C.FreeWithDefaultORTAllocator(unsafe.Pointer(resultBuffer))
+	if status1 != nil {
+		return toReturn, fmt.Errorf("Error freeing list of string lengths: %w",
+			statusToError(status1))
+	}
+	if status2 != nil {
+		return toReturn, fmt.Errorf("Error freeing buffer of output names: %w",
+			statusToError(status2))
+	}
+
+	return toReturn, nil
+}
+
+// Returns a list of Values containing results of a model run using
+// RunWithBinding. The returned slice contains the same number of values as the
+// number of names returned by GetOutputNames, and/or in the same order as they
+// were bound using IoBinding.BindOutput. IMPORTANT: Each Value returned by
+// this function must be freed by the caller; they are _copies_.
+//
+// Note: Using this function will cause Tensor contents to be copied from
+// C-managed to Go-managed memory to avoid leaks (this is similar to behavior
+// when DynamicAdvancedSession.Run is allowed to automatically allocate
+// output tensors). Note that this may be expensive for larger tensors.
+func (b *IoBinding) GetBoundOutputValues() ([]Value, error) {
+	var valuesBuffer **C.OrtValue
+	var numValues C.size_t
+	var e error
+	status := C.GetBoundOutputValues(b.o, &valuesBuffer, &numValues)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	valuesSlice := unsafe.Slice(valuesBuffer, numValues)
+
+	toReturn := make([]Value, numValues)
+	for i := range valuesSlice {
+		toReturn[i], e = createGoValueFromOrtValue(valuesSlice[i])
+		if e != nil {
+			// Upon error, we have a lot to clean up:
+			//  All OrtValues from C that haven't been converted...
+			for _, v := range valuesSlice {
+				if v != nil {
+					C.ReleaseOrtValue(v)
+				}
+			}
+			// the valuesBuffer...
+			C.FreeWithDefaultORTAllocator(unsafe.Pointer(valuesBuffer))
+			// ... and any Go values that we've already converted
+			for _, v := range toReturn {
+				if v != nil {
+					v.Destroy()
+				}
+			}
+
+			// Finally, we can actually return the error. Hopefully this
+			// doesn't happen often!
+			return nil, fmt.Errorf("Error converting output index %d to "+
+				"a Go-managed Value: %w", i, e)
+		}
+		// createGoValueFromOrtValue will automatically destroy the OrtValue,
+		// or it will be destroyed when the corresponding Go Value is
+		// Destroy()'d. Either way, we don't want to double-free it if we
+		// attempt to clean up, so make it nil to indicate we're done with it.
+		valuesSlice[i] = nil
+	}
+
+	// If we're here, everything was successfully converted to a Go value,
+	// which implies the C-managed OrtValues have already been released or
+	// will be released when the corresponding Go Value is destroyed.
+	status = C.FreeWithDefaultORTAllocator(unsafe.Pointer(valuesBuffer))
+	if status != nil {
+		// The API is cleaner if the caller doesn't need to worry about
+		// cleaning up if an error is returned.
+		for _, v := range toReturn {
+			v.Destroy()
+		}
+		return nil, fmt.Errorf("Error destroying C-managed buffer to hold "+
+			"OrtValue pointers: %w", statusToError(status))
+	}
+
+	return toReturn, nil
+}
+
+// Clears any previously set inputs. Can't cause errors in the ORT C API.
+func (b *IoBinding) ClearBoundInputs() {
+	if b.o == nil {
+		return
+	}
+	C.ClearBoundInputs(b.o)
+}
+
+// Clears any previously set outputs. Can't cause errors in the ORT C API.
+func (b *IoBinding) ClearBoundOutputs() {
+	if b.o == nil {
+		return
+	}
+	C.ClearBoundOutputs(b.o)
+}
+
 // Creates and returns a ModelMetadata instance for this session's model. The
 // returned metadata must be freed using its Destroy() function when no longer
 // needed.
@@ -1800,7 +2034,9 @@ func NewDynamicAdvancedSessionWithONNXData(onnxData []byte,
 }
 
 // Like NewAdvancedSession, but does not require specifying input and output
-// tensors.
+// tensors. Input and output names can be nil or empty, but _only if_ this
+// session will only be used via RunWithBinding, which manages names
+// separately.
 func NewDynamicAdvancedSession(onnxFilePath string, inputNames,
 	outputNames []string, options *SessionOptions) (*DynamicAdvancedSession,
 	error) {
@@ -2073,6 +2309,16 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []Value) error {
 		if err != nil {
 			return fmt.Errorf("Error creating tensor from ort: %w", err)
 		}
+	}
+	return nil
+}
+
+// Runs the session using the given IoBinding instance. The IoBinding must
+// have been created from this session's CreateIoBinding() function.
+func (s *DynamicAdvancedSession) RunWithBinding(b *IoBinding) error {
+	status := C.RunSessionWithBinding(s.s.ortSession, b.o)
+	if status != nil {
+		return statusToError(status)
 	}
 	return nil
 }
