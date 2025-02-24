@@ -55,6 +55,10 @@ OrtStatus *CreateOrtEnv(char *name, OrtEnv **env) {
   return ort_api->CreateEnv(ORT_LOGGING_LEVEL_ERROR, name, env);
 }
 
+OrtStatus *UpdateEnvWithCustomLogLevel(OrtEnv *ort_env, OrtLoggingLevel log_severity_level) {
+  return ort_api->UpdateEnvWithCustomLogLevel(ort_env, log_severity_level);
+}
+
 OrtStatus *DisableTelemetry(OrtEnv *env) {
   return ort_api->DisableTelemetryEvents(env);
 }
