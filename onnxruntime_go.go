@@ -78,10 +78,11 @@ func IsInitialized() bool {
 	return ortEnv != nil
 }
 
-// Call this function to initialize the internal onnxruntime environment. If
-// this doesn't return an error, the caller will be responsible for calling
-// DestroyEnvironment to free the onnxruntime state when no longer needed.
-func InitializeEnvironment() error {
+// Call this function, optionally with one or more EnvironmentOption, to
+// initialize the internal onnxruntime environment. If this doesn't return an
+// error, the caller will be responsible for calling DestroyEnvironment to free
+// the onnxruntime state when no longer needed.
+func InitializeEnvironment(opts ...EnvironmentOption) error {
 	if IsInitialized() {
 		return fmt.Errorf("The onnxruntime has already been initialized")
 	}
@@ -97,6 +98,13 @@ func InitializeEnvironment() error {
 	if status != nil {
 		return fmt.Errorf("Error creating ORT environment: %w",
 			statusToError(status))
+	}
+
+	for _, opt := range opts {
+		if status := opt(ortEnv); status != nil {
+			return fmt.Errorf("Error applying ORT environment option: %w",
+				statusToError(status))
+		}
 	}
 
 	status = C.CreateOrtMemoryInfo(&ortMemoryInfo)
@@ -131,6 +139,62 @@ func DestroyEnvironment() error {
 		return fmt.Errorf("Platform-specific cleanup failed: %w", e)
 	}
 	return nil
+}
+
+// EnvironmentOption is a functional option that can be provided during
+// initialization of an ORT Environment.
+type EnvironmentOption func(*C.OrtEnv) *C.OrtStatus
+
+const (
+	ortLogLevelVerbose = C.ORT_LOGGING_LEVEL_VERBOSE
+	ortLogLevelInfo    = C.ORT_LOGGING_LEVEL_INFO
+	ortLogLevelWarning = C.ORT_LOGGING_LEVEL_WARNING
+	ortLogLevelError   = C.ORT_LOGGING_LEVEL_ERROR
+	ortLogLevelFatal   = C.ORT_LOGGING_LEVEL_FATAL
+)
+
+// WithLogLevelVerbose is an EnvironmentOption that will set the ORT
+// Environment logging to emit verbose informational messages (least
+// severe) along with all messages of greater severity.
+func WithLogLevelVerbose() EnvironmentOption {
+	return func(e *C.OrtEnv) *C.OrtStatus {
+		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelVerbose)
+	}
+}
+
+// WithLogLevelInfo is an EnvironmentOption that will set the ORT Environment
+// logging to emit informational messages along with all messages of greater
+// severity.
+func WithLogLevelInfo() EnvironmentOption {
+	return func(e *C.OrtEnv) *C.OrtStatus {
+		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelInfo)
+	}
+}
+
+// WithLogLevelWarning is an EnvironmentOption that will set the ORT
+// Environment logging to emit warning messages along with all messages of
+// greater severity.
+func WithLogLevelWarning() EnvironmentOption {
+	return func(e *C.OrtEnv) *C.OrtStatus {
+		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelWarning)
+	}
+}
+
+// WithLogLevelError is an EnvironmentOption that will set the ORT
+// Environment logging to emit error messages along with all messages of
+// greater severity. This is the default logging level.
+func WithLogLevelError() EnvironmentOption {
+	return func(e *C.OrtEnv) *C.OrtStatus {
+		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelError)
+	}
+}
+
+// WithLogLevelFatal is an EnvironmentOption that will set the ORT
+// Environment logging to emit only fatal error messages (most severe).
+func WithLogLevelFatal() EnvironmentOption {
+	return func(e *C.OrtEnv) *C.OrtStatus {
+		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelFatal)
+	}
 }
 
 // Disables telemetry events for the onnxruntime environment. Must be called

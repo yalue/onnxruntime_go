@@ -48,6 +48,9 @@ void ReleaseOrtStatus(OrtStatus *status);
 // Wraps calling ort_api->CreateEnv. Returns a non-NULL status on error.
 OrtStatus *CreateOrtEnv(char *name, OrtEnv **env);
 
+// Wraps calling ort_api->UpdateEnvWithCustomLogLevel. Return a non-NULL status on error.
+OrtStatus *UpdateEnvWithCustomLogLevel(OrtEnv *ort_env, OrtLoggingLevel log_severity_level);
+
 // Wraps ort_api->DisableTelemetryEvents. Returns a non-NULL status on error.
 OrtStatus *DisableTelemetry(OrtEnv *env);
 
