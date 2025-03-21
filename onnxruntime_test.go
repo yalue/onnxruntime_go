@@ -102,9 +102,28 @@ func TestGetVersion(t *testing.T) {
 	defer CleanupRuntime(t)
 	version := GetVersion()
 	if version == "" {
-		t.Fatalf("Not found version onnxruntime library")
+		t.Fatalf("Unable to get the onnxruntime library version\n")
 	}
 	t.Logf("Found onnxruntime library version: %s\n", version)
+}
+
+func TestInitializationOptions(t *testing.T) {
+	e := InitializeEnvironment(WithLogLevelVerbose())
+	if e != nil {
+		t.Fatalf("Error initializing with 'verbose' log level: %s\n", e)
+	}
+	e = DestroyEnvironment()
+	if e != nil {
+		t.Fatalf("Error cleaning up 'verbose' log level environment: %s\n", e)
+	}
+	e = InitializeEnvironment(WithLogLevelError())
+	if e != nil {
+		t.Fatalf("Error initializing with 'error' log level: %s\n", e)
+	}
+	e = DestroyEnvironment()
+	if e != nil {
+		t.Fatalf("Error cleaning up 'error' log level environment: %s\n", e)
+	}
 }
 
 func TestTensorTypes(t *testing.T) {

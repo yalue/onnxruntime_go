@@ -102,6 +102,7 @@ func InitializeEnvironment(opts ...EnvironmentOption) error {
 
 	for _, opt := range opts {
 		if status := opt(ortEnv); status != nil {
+			DestroyEnvironment()
 			return fmt.Errorf("Error applying ORT environment option: %w",
 				statusToError(status))
 		}
