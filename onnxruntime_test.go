@@ -2063,6 +2063,42 @@ func BenchmarkCoreMLSession(b *testing.B) {
 	benchmarkBigSessionWithOptions(b, sessionOptions)
 }
 
+func getCoreMLV2SessionOptions(t testing.TB) *SessionOptions {
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+
+	// Create CoreML provider options
+	coreMLOptions := NewCoreMLProviderOptions()
+
+	// Apply the CoreML options to the session
+	e = options.AppendExecutionProviderCoreMLV2(coreMLOptions)
+	if e != nil {
+		options.Destroy()
+		t.Skipf("Couldn't enable CoreML: %s. This may be due to your system "+
+			"or onnxruntime library version not supporting CoreML.\n", e)
+	}
+	return options
+}
+
+func TestCoreMLV2Session(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getCoreMLV2SessionOptions(t)
+	defer sessionOptions.Destroy()
+	testBigSessionWithOptions(t, sessionOptions)
+}
+
+func BenchmarkCoreMLV2Session(b *testing.B) {
+	b.StopTimer()
+	InitializeRuntime(b)
+	defer CleanupRuntime(b)
+	sessionOptions := getCoreMLV2SessionOptions(b)
+	defer sessionOptions.Destroy()
+	benchmarkBigSessionWithOptions(b, sessionOptions)
+}
+
 func getDirectMLSessionOptions(t testing.TB) *SessionOptions {
 	options, e := NewSessionOptions()
 	if e != nil {

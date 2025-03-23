@@ -136,6 +136,11 @@ OrtStatus *AppendExecutionProviderTensorRTV2(OrtSessionOptions *o,
 OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
   uint32_t flags);
 
+// Wraps OrtApi method SessionOptionsAppendExecutionProvider specifically for CoreML
+// with the new options-based API while including the check that coreml is supported.
+OrtStatus *AppendExecutionProviderCoreMLV2(OrtSessionOptions *o,
+  const char **keys, const char **values, size_t num_options);
+
 // Wraps getting the OrtDmlApi struct and calling
 // dml_api->SessionOptionsAppendExecutionProvider_DML.
 OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,

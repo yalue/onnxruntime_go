@@ -184,6 +184,15 @@ OrtStatus *AppendExecutionProviderCoreML(OrtSessionOptions *o,
   return append_coreml_provider_fn(o, flags);
 }
 
+OrtStatus *AppendExecutionProviderCoreMLV2(OrtSessionOptions *o,
+  const char **keys, const char **values, size_t num_options) {
+  if (!append_coreml_provider_fn) {
+    return ort_api->CreateStatus(ORT_NOT_IMPLEMENTED, "Your platform or "
+      "onnxruntime library does not support CoreML");
+  }
+  return ort_api->SessionOptionsAppendExecutionProvider(o, "CoreML", keys, values, num_options);
+}
+
 OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,
   int device_id) {
   DummyOrtDMLAPI *dml_api = NULL;
@@ -475,4 +484,3 @@ OrtStatus *CreateOrtValue(OrtValue **in, size_t num_values,
   return ort_api->CreateValue((const OrtValue* const*) in, num_values,
     value_type, out);
 }
-
