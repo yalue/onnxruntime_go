@@ -2069,10 +2069,23 @@ func getCoreMLV2SessionOptions(t testing.TB) *SessionOptions {
 		t.Fatalf("Error creating session options: %s\n", e)
 	}
 
-	// Create CoreML provider options
-	coreMLOptions := NewCoreMLProviderOptions()
+	// Use the new API with CoreML provider options
+	coreMLOptions := map[string]string{
+		"ModelFormat":                        "NeuralNetwork", // Use NeuralNetwork format instead of MLProgram
+		"MLComputeUnits":                     "ALL",           // Use all available compute units
+		"RequireStaticInputShapes":           "0",             // Allow dynamic shapes
+		"EnableOnSubgraphs":                  "0",             // Don't enable on subgraphs
+		"ModelCacheDirectory":                "/tmp",          // Set the cache directory to /tmp
+		"AllowLowPrecisionAccumulationOnGPU": "1",             // Enable low precision acceleration
+	}
 
-	// Apply the CoreML options to the session
+	// If options can't be empty, catch any potential problems
+	if len(coreMLOptions) == 0 {
+		options.Destroy()
+		t.Skipf("Empty CoreML options map. This should not happen.\n")
+		return nil
+	}
+
 	e = options.AppendExecutionProviderCoreMLV2(coreMLOptions)
 	if e != nil {
 		options.Destroy()

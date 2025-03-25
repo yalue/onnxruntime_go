@@ -1415,150 +1415,9 @@ func (o *SessionOptions) AppendExecutionProviderTensorRT(
 	return nil
 }
 
-// CoreMLModelFormat represents the format of the CoreML model.
-type CoreMLModelFormat string
-
-const (
-	// CoreMLModelFormatMLProgram creates an MLProgram format model.
-	// Requires CoreML 5 or later (iOS 15+ or macOS 12+).
-	CoreMLModelFormatMLProgram CoreMLModelFormat = "MLProgram"
-
-	// CoreMLModelFormatNeuralNetwork creates a NeuralNetwork format model.
-	// Requires CoreML 3 or later (iOS 13+ or macOS 10.15+).
-	CoreMLModelFormatNeuralNetwork CoreMLModelFormat = "NeuralNetwork"
-)
-
-// CoreMLComputeUnits represents the compute units to use with CoreML.
-type CoreMLComputeUnits string
-
-const (
-	// CoreMLComputeUnitsCPUOnly limits CoreML to running on CPU only.
-	CoreMLComputeUnitsCPUOnly CoreMLComputeUnits = "CPUOnly"
-
-	// CoreMLComputeUnitsCPUAndNeuralEngine enables CoreML EP for Apple devices
-	// with a compatible Apple Neural Engine (ANE).
-	CoreMLComputeUnitsCPUAndNeuralEngine CoreMLComputeUnits = "CPUAndNeuralEngine"
-
-	// CoreMLComputeUnitsCPUAndGPU enables CoreML EP for Apple devices
-	// with a compatible GPU.
-	CoreMLComputeUnitsCPUAndGPU CoreMLComputeUnits = "CPUAndGPU"
-
-	// CoreMLComputeUnitsALL enables CoreML EP for all compatible Apple devices.
-	CoreMLComputeUnitsALL CoreMLComputeUnits = "ALL"
-)
-
-// CoreMLSpecializationStrategy represents the specialization strategy for CoreML models.
-type CoreMLSpecializationStrategy string
-
-const (
-	// CoreMLSpecializationStrategyDefault uses the default specialization strategy.
-	CoreMLSpecializationStrategyDefault CoreMLSpecializationStrategy = "Default"
-
-	// CoreMLSpecializationStrategyFastPrediction optimizes for prediction speed.
-	CoreMLSpecializationStrategyFastPrediction CoreMLSpecializationStrategy = "FastPrediction"
-)
-
-// CoreMLProviderOptions defines the options for the CoreML execution provider.
-type CoreMLProviderOptions struct {
-	// Internal map to store the options
-	options map[string]string
-}
-
-// NewCoreMLProviderOptions creates a new CoreMLProviderOptions with default values.
-func NewCoreMLProviderOptions() *CoreMLProviderOptions {
-	options := &CoreMLProviderOptions{
-		options: make(map[string]string),
-	}
-
-	// Set default values
-	options.options["ModelFormat"] = string(CoreMLModelFormatNeuralNetwork)
-	options.options["MLComputeUnits"] = string(CoreMLComputeUnitsALL)
-	options.options["RequireStaticInputShapes"] = "0"
-	options.options["EnableOnSubgraphs"] = "0"
-	options.options["SpecializationStrategy"] = string(CoreMLSpecializationStrategyDefault)
-	options.options["ProfileComputePlan"] = "0"
-	options.options["AllowLowPrecisionAccumulationOnGPU"] = "0"
-
-	return options
-}
-
-// SetModelFormat sets the CoreML model format to use.
-// Default is CoreMLModelFormatNeuralNetwork.
-func (o *CoreMLProviderOptions) SetModelFormat(format CoreMLModelFormat) {
-	o.options["ModelFormat"] = string(format)
-}
-
-// SetMLComputeUnits specifies which compute units to enable.
-// Default is CoreMLComputeUnitsALL.
-func (o *CoreMLProviderOptions) SetMLComputeUnits(units CoreMLComputeUnits) {
-	o.options["MLComputeUnits"] = string(units)
-}
-
-// SetRequireStaticInputShapes when true only allows the CoreML EP to take nodes
-// with inputs that have static shapes.
-// Default is false.
-func (o *CoreMLProviderOptions) SetRequireStaticInputShapes(require bool) {
-	if require {
-		o.options["RequireStaticInputShapes"] = "1"
-	} else {
-		o.options["RequireStaticInputShapes"] = "0"
-	}
-}
-
-// SetEnableOnSubgraphs when true enables CoreML EP to run on subgraphs in the body
-// of control flow operators.
-// Default is false.
-func (o *CoreMLProviderOptions) SetEnableOnSubgraphs(enable bool) {
-	if enable {
-		o.options["EnableOnSubgraphs"] = "1"
-	} else {
-		o.options["EnableOnSubgraphs"] = "0"
-	}
-}
-
-// SetSpecializationStrategy allows tailoring the specialization strategy.
-// Available since macOS>=10.15 or iOS>=18.0.
-// Default is CoreMLSpecializationStrategyDefault.
-func (o *CoreMLProviderOptions) SetSpecializationStrategy(strategy CoreMLSpecializationStrategy) {
-	o.options["SpecializationStrategy"] = string(strategy)
-}
-
-// SetProfileComputePlan when true logs hardware dispatch and estimated execution time.
-// Default is false.
-func (o *CoreMLProviderOptions) SetProfileComputePlan(enable bool) {
-	if enable {
-		o.options["ProfileComputePlan"] = "1"
-	} else {
-		o.options["ProfileComputePlan"] = "0"
-	}
-}
-
-// SetAllowLowPrecisionAccumulationOnGPU when true uses float16 for accumulation.
-// Default is false (uses float32).
-func (o *CoreMLProviderOptions) SetAllowLowPrecisionAccumulationOnGPU(allow bool) {
-	if allow {
-		o.options["AllowLowPrecisionAccumulationOnGPU"] = "1"
-	} else {
-		o.options["AllowLowPrecisionAccumulationOnGPU"] = "0"
-	}
-}
-
-// SetModelCacheDirectory specifies path to store compiled CoreML models.
-// Default is empty (cache disabled).
-func (o *CoreMLProviderOptions) SetModelCacheDirectory(path string) {
-	o.options["ModelCacheDirectory"] = path
-}
-
-// Update allows updating multiple options at once with a map.
-// This is similar to the Update method in other provider options.
-func (o *CoreMLProviderOptions) Update(options map[string]string) {
-	for k, v := range options {
-		o.options[k] = v
-	}
-}
 
 // Enables the CoreML backend for the given session options on supported
-// platforms.
+// platforms. 
 // The meanings of the flag bits are currently defined in the
 // coreml_provider_factory.h file which is provided in the include/ directory of
 // the onnxruntime releases for Apple platforms.
@@ -1577,17 +1436,9 @@ func (o *SessionOptions) AppendExecutionProviderCoreML(flags uint32) error {
 //
 // For CoreML options, see:
 // https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html
-func (o *SessionOptions) AppendExecutionProviderCoreMLV2(coreMLOptions *CoreMLProviderOptions) error {
-	// Handle case with no options
-	if coreMLOptions == nil {
-		status := C.AppendExecutionProviderCoreMLV2(o.o, nil, nil, 0)
-		if status != nil {
-			return statusToError(status)
-		}
-		return nil
-	}
+func (o *SessionOptions) AppendExecutionProviderCoreMLV2(options map[string]string) error {
 
-	options := coreMLOptions.options
+	// Handle case with no options
 	if len(options) == 0 {
 		status := C.AppendExecutionProviderCoreMLV2(o.o, nil, nil, 0)
 		if status != nil {
