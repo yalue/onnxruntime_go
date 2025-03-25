@@ -1415,9 +1415,8 @@ func (o *SessionOptions) AppendExecutionProviderTensorRT(
 	return nil
 }
 
-
 // Enables the CoreML backend for the given session options on supported
-// platforms. 
+// platforms.
 // The meanings of the flag bits are currently defined in the
 // coreml_provider_factory.h file which is provided in the include/ directory of
 // the onnxruntime releases for Apple platforms.
@@ -1448,25 +1447,9 @@ func (o *SessionOptions) AppendExecutionProviderCoreMLV2(options map[string]stri
 	}
 
 	// Convert map to arrays of keys and values
-	keys := make([]*C.char, len(options))
-	values := make([]*C.char, len(options))
-
-	i := 0
-	for k, v := range options {
-		keys[i] = C.CString(k)
-		values[i] = C.CString(v)
-		i++
-	}
-
-	// Clean up C strings when done
-	defer func() {
-		for _, s := range keys {
-			C.free(unsafe.Pointer(s))
-		}
-		for _, s := range values {
-			C.free(unsafe.Pointer(s))
-		}
-	}()
+	keys, values := mapToCStrings(options)
+	defer freeCStrings(keys)
+	defer freeCStrings(values)
 
 	// Call C function
 	status := C.AppendExecutionProviderCoreMLV2(o.o,
