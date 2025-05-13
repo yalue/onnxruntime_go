@@ -7,10 +7,12 @@ import "C"
 
 import (
 	"reflect"
+
+	"github.com/x448/float16"
 )
 
 type FloatData interface {
-	~float32 | ~float64
+	~float32 | ~float64 | float16.Float16
 }
 
 type IntData interface {
@@ -27,6 +29,11 @@ func GetTensorElementDataType[T TensorData]() C.ONNXTensorElementDataType {
 	// Sadly, we can't do type assertions to get underlying types, so we need
 	// to use reflect here instead.
 	var v T
+	// There MUST be a better way......
+	// but since float16 is based on int, this is it...
+	if reflect.ValueOf(v).Type().Name() == "Float16" {
+		return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16
+	}
 	kind := reflect.ValueOf(v).Kind()
 	switch kind {
 	case reflect.Float64:
