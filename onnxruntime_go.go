@@ -146,20 +146,40 @@ func DestroyEnvironment() error {
 // initialization of an ORT Environment.
 type EnvironmentOption func(*C.OrtEnv) *C.OrtStatus
 
+// Wraps the OrtLoggingLevel enum
+type LoggingLevel int
+
 const (
-	ortLogLevelVerbose = C.ORT_LOGGING_LEVEL_VERBOSE
-	ortLogLevelInfo    = C.ORT_LOGGING_LEVEL_INFO
-	ortLogLevelWarning = C.ORT_LOGGING_LEVEL_WARNING
-	ortLogLevelError   = C.ORT_LOGGING_LEVEL_ERROR
-	ortLogLevelFatal   = C.ORT_LOGGING_LEVEL_FATAL
+	LoggingLevelVerbose = C.ORT_LOGGING_LEVEL_VERBOSE
+	LoggingLevelInfo    = C.ORT_LOGGING_LEVEL_INFO
+	LoggingLevelWarning = C.ORT_LOGGING_LEVEL_WARNING
+	LoggingLevelError   = C.ORT_LOGGING_LEVEL_ERROR
+	LoggingLevelFatal   = C.ORT_LOGGING_LEVEL_FATAL
 )
+
+func (l LoggingLevel) String() string {
+	switch l {
+	case LoggingLevelVerbose:
+		return "ORT_LOGGING_LEVEL_VERBOSE"
+	case LoggingLevelInfo:
+		return "ORT_LOGGING_LEVEL_INFO"
+	case LoggingLevelWarning:
+		return "ORT_LOGGING_LEVEL_WARNING"
+	case LoggingLevelError:
+		return "ORT_LOGGING_LEVEL_ERROR"
+	case LoggingLevelFatal:
+		return "ORT_LOGGING_LEVEL_FATAL"
+	}
+	return fmt.Sprintf("<Unknown logging level %d>", int(l))
+}
 
 // WithLogLevelVerbose is an EnvironmentOption that will set the ORT
 // Environment logging to emit verbose informational messages (least
 // severe) along with all messages of greater severity.
 func WithLogLevelVerbose() EnvironmentOption {
 	return func(e *C.OrtEnv) *C.OrtStatus {
-		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelVerbose)
+		return C.UpdateEnvWithCustomLogLevel(e,
+			C.OrtLoggingLevel(LoggingLevelVerbose))
 	}
 }
 
@@ -168,7 +188,8 @@ func WithLogLevelVerbose() EnvironmentOption {
 // severity.
 func WithLogLevelInfo() EnvironmentOption {
 	return func(e *C.OrtEnv) *C.OrtStatus {
-		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelInfo)
+		return C.UpdateEnvWithCustomLogLevel(e,
+			C.OrtLoggingLevel(LoggingLevelInfo))
 	}
 }
 
@@ -177,7 +198,8 @@ func WithLogLevelInfo() EnvironmentOption {
 // greater severity.
 func WithLogLevelWarning() EnvironmentOption {
 	return func(e *C.OrtEnv) *C.OrtStatus {
-		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelWarning)
+		return C.UpdateEnvWithCustomLogLevel(e,
+			C.OrtLoggingLevel(LoggingLevelWarning))
 	}
 }
 
@@ -186,7 +208,8 @@ func WithLogLevelWarning() EnvironmentOption {
 // greater severity. This is the default logging level.
 func WithLogLevelError() EnvironmentOption {
 	return func(e *C.OrtEnv) *C.OrtStatus {
-		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelError)
+		return C.UpdateEnvWithCustomLogLevel(e,
+			C.OrtLoggingLevel(LoggingLevelError))
 	}
 }
 
@@ -194,7 +217,8 @@ func WithLogLevelError() EnvironmentOption {
 // Environment logging to emit only fatal error messages (most severe).
 func WithLogLevelFatal() EnvironmentOption {
 	return func(e *C.OrtEnv) *C.OrtStatus {
-		return C.UpdateEnvWithCustomLogLevel(e, ortLogLevelFatal)
+		return C.UpdateEnvWithCustomLogLevel(e,
+			C.OrtLoggingLevel(LoggingLevelFatal))
 	}
 }
 
@@ -247,7 +271,7 @@ func (s Shape) FlattenedSize() int64 {
 	if len(s) == 0 {
 		return 0
 	}
-	toReturn := int64(s[0])
+	toReturn := s[0]
 	for i := 1; i < len(s); i++ {
 		toReturn *= s[i]
 	}
@@ -262,22 +286,31 @@ func (s Shape) Validate() error {
 	if len(s) == 0 {
 		return ZeroShapeLengthError
 	}
-	if s[0] <= 0 {
-		return &BadShapeDimensionError{
-			DimensionIndex: 0,
-			DimensionSize:  s[0],
-		}
-	}
-	flattenedSize := int64(s[0])
-	for i := 1; i < len(s); i++ {
-		d := s[i]
-		if d <= 0 {
+	hasZeroDim := false
+	// If any dimension is negative, return an error. Also keep track of
+	// whether any dimension is 0.
+	for i, v := range s {
+		if v < 0 {
 			return &BadShapeDimensionError{
 				DimensionIndex: i,
-				DimensionSize:  d,
+				DimensionSize:  v,
 			}
 		}
-		tmp := flattenedSize * d
+		if v == 0 {
+			hasZeroDim = true
+		}
+	}
+
+	// We don't need to check for overflow if one or more dimension was 0.
+	if hasZeroDim {
+		return nil
+	}
+
+	// All dimensions are positive and nonzero, so make sure that multiplying
+	// them together won't overflow an int64.
+	flattenedSize := s[0]
+	for i := 1; i < len(s); i++ {
+		tmp := flattenedSize * s[i]
 		if tmp < flattenedSize {
 			return ShapeOverflowError
 		}
@@ -440,11 +473,18 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 	}
 	var ortValue *C.OrtValue
 	dataType := GetTensorElementDataType[T]()
-	dataSize := unsafe.Sizeof(data[0]) * uintptr(elementCount)
 
-	status := C.CreateOrtTensorWithShape(unsafe.Pointer(&data[0]),
-		C.size_t(dataSize), (*C.int64_t)(unsafe.Pointer(&s[0])),
-		C.int64_t(len(s)), ortMemoryInfo, dataType, &ortValue)
+	var dataPtr unsafe.Pointer
+	var dataSize uintptr
+	if elementCount != 0 {
+		// Only do operations that require accessing the data slice if we know
+		// the Tensor's shape doesn't contain any 0 dimensions
+		dataSize = unsafe.Sizeof(data[0]) * uintptr(elementCount)
+		dataPtr = unsafe.Pointer(&data[0])
+	}
+	status := C.CreateOrtTensorWithShape(dataPtr, C.size_t(dataSize),
+		(*C.int64_t)(unsafe.Pointer(&s[0])), C.int64_t(len(s)), ortMemoryInfo,
+		dataType, &ortValue)
 	if status != nil {
 		return nil, fmt.Errorf("ORT API error creating tensor: %s",
 			statusToError(status))
@@ -456,9 +496,6 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 		shape:    s.Clone(),
 		ortValue: ortValue,
 	}
-	// TODO: Set a finalizer on new Tensors to hopefully prevent careless
-	// memory leaks.
-	// - Idea: use a "destroyable" interface?
 	return &toReturn, nil
 }
 

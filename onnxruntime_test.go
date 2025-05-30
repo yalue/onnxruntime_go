@@ -184,6 +184,18 @@ func TestCreateTensor(t *testing.T) {
 		t.Fatalf("New tensor data contains %d elements, when it should "+
 			"contain 10.\n", len(tensor2.GetData()))
 	}
+
+	// It shouldn't be an error to create a tensor with a 0 dimension; it just
+	// shouldn't have any underlying data.
+	tensor3, e := NewEmptyTensor[uint8](NewShape(4, 5, 6, 0, 8))
+	if e != nil {
+		t.Fatalf("Error creating a tensor with a dimension of 0: %s\n", e)
+	}
+	defer tensor3.Destroy()
+	if len(tensor3.GetData()) != 0 {
+		t.Fatalf("Tensor 3's data length is %d, expected 0.\n",
+			len(tensor3.GetData()))
+	}
 }
 
 func TestBoolTensor(t *testing.T) {
@@ -233,14 +245,6 @@ func TestBadTensorShapes(t *testing.T) {
 			"shape.\n")
 	}
 	t.Logf("Got expected error when creating a tensor with an empty shape: "+
-		"%s\n", e)
-	s = NewShape(10, 0, 10)
-	_, e = NewEmptyTensor[uint16](s)
-	if e == nil {
-		t.Fatalf("Didn't get an error when creating a tensor with a shape " +
-			"containing a 0 dimension.\n")
-	}
-	t.Logf("Got expected error when creating a tensor with a 0 dimension: "+
 		"%s\n", e)
 	s = NewShape(10, 10, -10)
 	_, e = NewEmptyTensor[int32](s)
@@ -674,6 +678,42 @@ func TestDynamicAllocatedOutputTensor(t *testing.T) {
 			expectedShape, outputB.shape)
 	}
 	verifyTensorData(t, outputB, expectedB)
+}
+
+func TestZeroDimensionOutput(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	filename := "test_data/example_0_dim_output.onnx"
+	session, e := NewDynamicAdvancedSession(filename, []string{"x"},
+		[]string{"y"}, nil)
+	if e != nil {
+		t.Fatalf("Error creating session for %s: %s\n", filename, e)
+	}
+	defer session.Destroy()
+
+	input, e := NewEmptyTensor[float32](NewShape(2, 8))
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	outputs := []Value{nil}
+
+	e = session.Run([]Value{input}, outputs)
+	if e != nil {
+		t.Fatalf("Error running session: %s\n", e)
+	}
+	if outputs[0] == nil {
+		t.Fatalf("Session did allocate output automatically\n")
+	}
+	defer outputs[0].Destroy()
+
+	outputShape := outputs[0].GetShape()
+	expectedShape := NewShape(2, 0, 8)
+	if !outputShape.Equals(expectedShape) {
+		t.Fatalf("Output shape %s does not equal expected shape %s\n",
+			outputShape, expectedShape)
+	}
 }
 
 // Makes sure that the sum of each vector in the input tensor matches the
@@ -1283,20 +1323,12 @@ func TestBadMaps(t *testing.T) {
 	// There are many, many ways I've found to create a bad map. This test only
 	// checks a few of them.
 
-	// We should get an error for an empty map, right? (I don't think the docs
-	// specify at the moment.)
-	_, e := NewMapFromGoMap(map[int64]float32{})
-	if e == nil {
-		t.Fatalf("Didn't get expected error creating empty map.\n")
-	}
-	t.Logf("Got expected error when creating empty map: %s\n", e)
-
 	// Floats aren't supported as keys.
 	floatKeysTensor := newTestTensor[float32](t, NewShape(10))
 	defer floatKeysTensor.Destroy()
 	floatValuesTensor := newTestTensor[float32](t, NewShape(10))
 	defer floatValuesTensor.Destroy()
-	_, e = NewMap(floatKeysTensor, floatValuesTensor)
+	_, e := NewMap(floatKeysTensor, floatValuesTensor)
 	if e == nil {
 		t.Fatalf("Didn't get expected error when using float map keys.\n")
 	}

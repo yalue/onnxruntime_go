@@ -48,8 +48,10 @@ void ReleaseOrtStatus(OrtStatus *status);
 // Wraps calling ort_api->CreateEnv. Returns a non-NULL status on error.
 OrtStatus *CreateOrtEnv(char *name, OrtEnv **env);
 
-// Wraps calling ort_api->UpdateEnvWithCustomLogLevel. Return a non-NULL status on error.
-OrtStatus *UpdateEnvWithCustomLogLevel(OrtEnv *ort_env, OrtLoggingLevel log_severity_level);
+// Wraps calling ort_api->UpdateEnvWithCustomLogLevel. Return a non-NULL status
+// on error.
+OrtStatus *UpdateEnvWithCustomLogLevel(OrtEnv *ort_env,
+    OrtLoggingLevel log_severity_level);
 
 // Wraps ort_api->DisableTelemetryEvents. Returns a non-NULL status on error.
 OrtStatus *DisableTelemetry(OrtEnv *env);
@@ -80,6 +82,9 @@ OrtStatus *SetSessionExecutionMode(OrtSessionOptions *o, int new_mode);
 
 // Wraps ort_api->SetSessionGraphOptimizationLevel
 OrtStatus *SetSessionGraphOptimizationLevel(OrtSessionOptions *o, int level);
+
+// Wraps ort_api->SetSessionLogSeverityLevel
+OrtStatus *SetSessionLogSeverityLevel(OrtSessionOptions *o, int level);
 
 // Wraps ort_api->AddSessionConfigEntry
 OrtStatus *AddSessionConfigEntry(OrtSessionOptions *o, char *key, char *value);
