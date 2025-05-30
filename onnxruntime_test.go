@@ -1745,6 +1745,10 @@ func TestSessionOptions(t *testing.T) {
 	if e != nil {
 		t.Fatalf("Error setting memory pattern: %s\n", e)
 	}
+	e = options.SetLogSeverityLevel(LoggingLevelWarning)
+	if e != nil {
+		t.Fatalf("Error setting log severity level: %s\n", e)
+	}
 	testBigSessionWithOptions(t, options)
 }
 
@@ -2180,6 +2184,12 @@ func getOpenVINOSessionOptions(t testing.TB) *SessionOptions {
 	options, e := NewSessionOptions()
 	if e != nil {
 		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	// OpenVINO prints messages to stdout simply for missing libraries. We
+	// don't want to clutter the test output, so reduce the logging level.
+	e = SetEnvironmentLogLevel(LoggingLevelFatal)
+	if e != nil {
+		t.Fatalf("Error reducing log severity level for OpenVINO: %s\n", e)
 	}
 	e = options.AppendExecutionProviderOpenVINO(map[string]string{})
 	if e != nil {

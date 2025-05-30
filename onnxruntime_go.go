@@ -254,6 +254,21 @@ func EnableTelemetry() error {
 	return nil
 }
 
+// Sets the environmnent-wide log severity level. The argument must be one of
+// LoggingLevelVerbose, LoggingLevelInfo, LoggingLevelWarning,
+// LoggingLevelError, or LoggingLevelFatal. Must only be used after the
+// environment has been initialized.
+func SetEnvironmentLogLevel(level LoggingLevel) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	status := C.UpdateEnvWithCustomLogLevel(ortEnv, C.OrtLoggingLevel(level))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // The Shape type holds the shape of the tensors used by the network input and
 // outputs.
 type Shape []int64
@@ -1301,6 +1316,17 @@ func (o *SessionOptions) SetExecutionMode(newMode ExecutionMode) error {
 func (o *SessionOptions) SetGraphOptimizationLevel(
 	level GraphOptimizationLevel) error {
 	status := C.SetSessionGraphOptimizationLevel(o.o, C.int(level))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Sets the sessions log severity level. Must be one of LoggingLevelVerbose,
+// LoggingLevelInfo, LoggingLevelWarning, LoggingLevelError, or
+// LoggingLevelFatal.
+func (o *SessionOptions) SetLogSeverityLevel(level LoggingLevel) error {
+	status := C.SetSessionLogSeverityLevel(o.o, C.int(level))
 	if status != nil {
 		return statusToError(status)
 	}
