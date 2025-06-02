@@ -2676,7 +2676,14 @@ func getInputOutputInfoFromCSession(s *C.OrtSession) ([]InputOutputInfo,
 // struct.
 func GetInputOutputInfo(path string) ([]InputOutputInfo, []InputOutputInfo,
 	error) {
-	s, e := createCSessionFromFile(path, nil)
+	return GetInputOutputInfoWithOptions(path, nil)
+}
+
+// Identical in behavior to GetInputOutputInfo, but addtionally takes
+// session options to handle models that require options to load.
+func GetInputOutputInfoWithOptions(path string,
+	options *SessionOptions) ([]InputOutputInfo, []InputOutputInfo, error) {
+	s, e := createCSessionFromFile(path, options)
 	if e != nil {
 		return nil, nil, fmt.Errorf("Error loading temporary session: %w", e)
 	}
@@ -2716,7 +2723,14 @@ func getModelMetadataFromCSession(s *C.OrtSession) (*ModelMetadata, error) {
 // Warning: This function loads the onnx content into a temporary onnxruntime
 // session, so it may be computationally expensive.
 func GetModelMetadata(path string) (*ModelMetadata, error) {
-	s, e := createCSessionFromFile(path, nil)
+	return GetModelMetadataWithOptions(path, nil)
+}
+
+// Identical in behavior to GetModelMetadata, but addtionally takes
+// session options to handle models that require options to load.
+func GetModelMetadataWithOptions(path string,
+	options *SessionOptions) (*ModelMetadata, error) {
+	s, e := createCSessionFromFile(path, options)
 	if e != nil {
 		return nil, fmt.Errorf("Error loading %s: %w", path, e)
 	}
