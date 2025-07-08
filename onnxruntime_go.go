@@ -1015,6 +1015,9 @@ func (t *CustomDataTensor) GetONNXType() ONNXType {
 
 // Sets all bytes in the data slice to 0.
 func (t *CustomDataTensor) ZeroContents() {
+	if len(t.data) == 0 {
+		return
+	}
 	C.memset(unsafe.Pointer(&t.data[0]), 0, C.size_t(len(t.data)))
 }
 
@@ -2229,6 +2232,10 @@ func getShapeFromInfo(t *C.OrtTensorTypeAndShapeInfo) (Shape, error) {
 	if status != nil {
 		return nil, fmt.Errorf("Error getting dimension count: %w",
 			statusToError(status))
+	}
+	if dimCount == 0 {
+		// Apparently some models will report shapes with zero dimensions
+		return Shape{}, nil
 	}
 	shape := make(Shape, dimCount)
 	status = C.GetDimensions(t, (*C.int64_t)(&shape[0]), dimCount)
