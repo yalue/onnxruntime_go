@@ -494,6 +494,24 @@ func TestArbitraryTensors(t *testing.T) {
 	}
 }
 
+func TestBadExecutionProvider(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+	e = options.AppendExecutionProvider("NonsenseProvider1", nil)
+	if e == nil {
+		t.Fatalf("Didn't get expected error attempting to append a bad " +
+			"execution provider")
+	}
+	t.Logf("Got expected error when attempting to append a bad execution "+
+		"provider: %s\n", e)
+}
+
 // Used for testing the operation of test_data/example_multitype.onnx
 func randomMultitypeInputs(t *testing.T, seed int64) (*Tensor[uint8],
 	*Tensor[float64]) {

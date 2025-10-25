@@ -1567,6 +1567,29 @@ func (o *SessionOptions) AppendExecutionProviderOpenVINO(
 	return nil
 }
 
+// Wraps the AppendExecutionProvider onnxruntime C API function. See the
+// documentation for that function for a list of all names and supported
+// options.
+func (o *SessionOptions) AppendExecutionProvider(providerName string,
+	options map[string]string) error {
+	name := C.CString(providerName)
+	defer C.free(unsafe.Pointer(name))
+	var keysPtr, valuesPtr **C.char
+	if len(options) != 0 {
+		keys, values := mapToCStrings(options)
+		defer freeCStrings(keys)
+		defer freeCStrings(values)
+		keysPtr = &(keys[0])
+		valuesPtr = &(values[0])
+	}
+	status := C.AppendExecutionProvider(o.o, name, keysPtr, valuesPtr,
+		C.int(len(options)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.

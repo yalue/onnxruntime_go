@@ -215,6 +215,13 @@ OrtStatus *AppendExecutionProviderOpenVINOV2(OrtSessionOptions *o,
     values, num_keys);
 }
 
+OrtStatus *AppendExecutionProvider(OrtSessionOptions *o,
+  const char *provider_name, const char **keys, const char **values,
+  int num_keys) {
+  return ort_api->SessionOptionsAppendExecutionProvider(o, provider_name,
+    keys, values, num_keys);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
     OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
