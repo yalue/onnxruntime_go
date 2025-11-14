@@ -176,6 +176,22 @@ OrtStatus *RunOrtSession(OrtSession *session,
   OrtValue **inputs, char **input_names, int input_count,
   OrtValue **outputs, char **output_names, int output_count);
 
+// Runs an ORT session with explicit OrtRunOptions.
+OrtStatus *RunOrtSessionWithOptions(OrtSession *session,
+  OrtValue **inputs, char **input_names, int input_count,
+  OrtValue **outputs, char **output_names, int output_count,
+  OrtRunOptions *run_options);
+
+// RunOptions helpers
+// Wraps ort_api->CreateRunOptions
+OrtStatus *CreateRunOptions(OrtRunOptions **o);
+// Wraps ort_api->ReleaseRunOptions
+void ReleaseRunOptions(OrtRunOptions *o);
+// Wraps ort_api->RunOptionsSetTerminate
+OrtStatus *RunOptionsSetTerminate(OrtRunOptions *o);
+// Wraps ort_api->RunOptionsUnsetTerminate
+OrtStatus *RunOptionsUnsetTerminate(OrtRunOptions *o);
+
 // Wraps ort_api->RunWithBinding.
 OrtStatus *RunSessionWithBinding(OrtSession *session, OrtIoBinding *b);
 

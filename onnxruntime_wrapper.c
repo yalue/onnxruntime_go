@@ -268,6 +268,33 @@ OrtStatus *RunOrtSession(OrtSession *session,
   return status;
 }
 
+OrtStatus *RunOrtSessionWithOptions(OrtSession *session,
+  OrtValue **inputs, char **input_names, int input_count,
+  OrtValue **outputs, char **output_names, int output_count,
+  OrtRunOptions *run_options) {
+  OrtStatus *status = NULL;
+  status = ort_api->Run(session, run_options, (const char* const*) input_names,
+    (const OrtValue* const*) inputs, input_count,
+    (const char* const*) output_names, output_count, outputs);
+  return status;
+}
+
+OrtStatus *CreateRunOptions(OrtRunOptions **o) {
+  return ort_api->CreateRunOptions(o);
+}
+
+void ReleaseRunOptions(OrtRunOptions *o) {
+  ort_api->ReleaseRunOptions(o);
+}
+
+OrtStatus *RunOptionsSetTerminate(OrtRunOptions *o) {
+  return ort_api->RunOptionsSetTerminate(o);
+}
+
+OrtStatus *RunOptionsUnsetTerminate(OrtRunOptions *o) {
+  return ort_api->RunOptionsUnsetTerminate(o);
+}
+
 OrtStatus *RunSessionWithBinding(OrtSession *session, OrtIoBinding *b) {
   return ort_api->RunWithBinding(session, NULL, b);
 }
