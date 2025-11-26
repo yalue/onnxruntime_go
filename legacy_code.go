@@ -4,7 +4,6 @@ package onnxruntime_go
 // purposes, but is not expected to be regularly maintained or udpated.
 
 import (
-	"context"
 	"fmt"
 	"os"
 )
@@ -130,16 +129,6 @@ func (s *Session[T]) Run() error {
 	return s.s.Run()
 }
 
-// RunWithOptions runs the session with an explicit RunOptions.
-func (s *Session[T]) RunWithOptions(opts *RunOptions) error {
-	return s.s.RunWithOptions(opts)
-}
-
-// RunWithContext runs the session and cancels when ctx.Done().
-func (s *Session[_]) RunWithContext(ctx context.Context) error {
-	return s.s.RunWithContext(ctx)
-}
-
 // Unlike the non-dynamic equivalents, the DynamicSession's Run() function
 // takes a list of input and output tensors rather than requiring the tensors
 // to be specified at Session creation time. It is still the caller's
@@ -172,33 +161,6 @@ func (s *DynamicSession[in, out]) Run(inputs []*Tensor[in],
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
 	return nil
-}
-
-// RunWithOptions runs the dynamic session with provided RunOptions.
-func (s *DynamicSession[in, out]) RunWithOptions(inputs []*Tensor[in],
-	outputs []*Tensor[out], opts *RunOptions) error {
-	valsIn := make([]Value, len(inputs))
-	for i, t := range inputs {
-		valsIn[i] = t
-	}
-	valsOut := make([]Value, len(outputs))
-	for i, t := range outputs {
-		valsOut[i] = t
-	}
-	return s.s.RunWithOptions(valsIn, valsOut, opts)
-}
-
-// RunWithContext runs the dynamic session and cancels when ctx.Done().
-func (s *DynamicSession[in, out]) RunWithContext(ctx context.Context, inputs []*Tensor[in], outputs []*Tensor[out]) error {
-	valsIn := make([]Value, len(inputs))
-	for i, t := range inputs {
-		valsIn[i] = t
-	}
-	valsOut := make([]Value, len(outputs))
-	for i, t := range outputs {
-		valsOut[i] = t
-	}
-	return s.s.RunWithContext(ctx, valsIn, valsOut)
 }
 
 // This type alias is included to avoid breaking older code, where the inputs
