@@ -5,10 +5,8 @@
 package onnxruntime_go
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"unsafe"
 )
 
@@ -1627,8 +1625,8 @@ func NewRunOptions() (*RunOptions, error) {
 	return &RunOptions{o: o}, nil
 }
 
-// Close releases the underlying OrtRunOptions.
-func (o *RunOptions) Close() error {
+// Destroy releases the underlying OrtRunOptions.
+func (o *RunOptions) Destroy() error {
 	if o == nil || o.o == nil {
 		return fmt.Errorf("The RunOptions are not initialized")
 	}
@@ -1636,9 +1634,6 @@ func (o *RunOptions) Close() error {
 	o.o = nil
 	return nil
 }
-
-// Destroy is an alias of Close for consistency.
-func (o *RunOptions) Destroy() error { return o.Close() }
 
 // Terminate sets the terminate flag so any ongoing Run using this RunOptions fails quickly.
 func (o *RunOptions) Terminate() error {
@@ -2036,28 +2031,6 @@ func (s *AdvancedSession) RunWithOptions(opts *RunOptions) error {
 		return fmt.Errorf("Error running network: %w", statusToError(status))
 	}
 	return nil
-}
-
-// RunWithContext runs the session and cancels it when ctx is done.
-func (s *AdvancedSession) RunWithContext(ctx context.Context) error {
-	ro, err := NewRunOptions()
-	if err != nil {
-		return err
-	}
-	defer ro.Close()
-	// cancellation goroutine
-	stop := make(chan struct{})
-	var once sync.Once
-	go func() {
-		select {
-		case <-ctx.Done():
-			once.Do(func() { _ = ro.Terminate() })
-		case <-stop:
-		}
-	}()
-	err = s.RunWithOptions(ro)
-	close(stop)
-	return err
 }
 
 // Wraps the OrtIoBinding instance. Must be created using
@@ -2547,16 +2520,6 @@ func (s *DynamicAdvancedSession) Run(inputs, outputs []Value) error {
 	return s.RunWithOptions(inputs, outputs, nil)
 }
 
-// Runs the session using the given IoBinding instance. The IoBinding must
-// have been created from this session's CreateIoBinding() function.
-func (s *DynamicAdvancedSession) RunWithBinding(b *IoBinding) error {
-	status := C.RunSessionWithBinding(s.s.ortSession, b.o)
-	if status != nil {
-		return statusToError(status)
-	}
-	return nil
-}
-
 func (s *DynamicAdvancedSession) RunWithOptions(inputs, outputs []Value, opts *RunOptions) error {
 	if len(inputs) != len(s.s.inputNames) {
 		return fmt.Errorf("The session specified %d input names, but Run() "+
@@ -2604,25 +2567,14 @@ func (s *DynamicAdvancedSession) RunWithOptions(inputs, outputs []Value, opts *R
 	return nil
 }
 
-// RunWithContext runs the dynamic session and cancels when ctx.Done().
-func (s *DynamicAdvancedSession) RunWithContext(ctx context.Context, inputs, outputs []Value) error {
-	ro, err := NewRunOptions()
-	if err != nil {
-		return err
+// Runs the session using the given IoBinding instance. The IoBinding must
+// have been created from this session's CreateIoBinding() function.
+func (s *DynamicAdvancedSession) RunWithBinding(b *IoBinding) error {
+	status := C.RunSessionWithBinding(s.s.ortSession, b.o)
+	if status != nil {
+		return statusToError(status)
 	}
-	defer ro.Close()
-	stop := make(chan struct{})
-	var once sync.Once
-	go func() {
-		select {
-		case <-ctx.Done():
-			once.Do(func() { _ = ro.Terminate() })
-		case <-stop:
-		}
-	}()
-	err = s.RunWithOptions(inputs, outputs, ro)
-	close(stop)
-	return err
+	return nil
 }
 
 // Creates and returns a ModelMetadata instance for this session's model. The

@@ -1,7 +1,6 @@
 package onnxruntime_go
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -2238,7 +2237,6 @@ func BenchmarkOpenVINOSession(b *testing.B) {
 	benchmarkBigSessionWithOptions(b, sessionOptions)
 }
 
-// Test Cancel
 func TestCancelWithRunOptions_AdvancedSession(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
@@ -2259,16 +2257,17 @@ func TestCancelWithRunOptions_AdvancedSession(t *testing.T) {
 	}
 	defer session.Destroy()
 
+	// Create RunOptions and terminate immediately
 	ro, e := NewRunOptions()
 	if e != nil {
 		t.Fatalf("Error creating RunOptions: %s\n", e)
 	}
-	defer ro.Close()
+	defer ro.Destroy()
 	if err := ro.Terminate(); err != nil {
 		t.Fatalf("Error setting terminate flag: %s\n", err)
 	}
 
-	// expect fail
+	// Run (expected to fail due to termination)
 	err := session.RunWithOptions(ro)
 	if err == nil {
 		t.Fatalf("Expected error when running with terminated RunOptions, got nil")
@@ -2276,7 +2275,7 @@ func TestCancelWithRunOptions_AdvancedSession(t *testing.T) {
 		t.Logf("Got expected error after termination: %s", err)
 	}
 
-	// expect success
+	// Unset the terminate flag and run again (expected to succeed)
 	if err := ro.UnsetTerminate(); err != nil {
 		t.Fatalf("Error unsetting terminate flag: %s\n", err)
 	}
@@ -2284,7 +2283,7 @@ func TestCancelWithRunOptions_AdvancedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunWithOptions after UnsetTerminate failed: %s\n", err)
 	}
-	// validate result
+	// Validate result
 	expected := inputData[0] + inputData[1]
 	result := output.GetData()[0]
 	if result != expected {
@@ -2292,7 +2291,7 @@ func TestCancelWithRunOptions_AdvancedSession(t *testing.T) {
 	}
 }
 
-func TestCancelWithContext_DynamicAdvancedSession(t *testing.T) {
+func TestCancelWithRunOptions_DynamicAdvancedSession(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
 
@@ -2306,49 +2305,22 @@ func TestCancelWithContext_DynamicAdvancedSession(t *testing.T) {
 	}
 	defer session.Destroy()
 
-	// cancel run in 50ms
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create RunOptions and terminate after 50ms
+	ro, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer ro.Destroy()
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		cancel()
+		_ = ro.Terminate()
 	}()
 
-	// expect fail due to cancelled
-	err := session.RunWithContext(ctx, []Value{input}, []Value{output})
+	// Run (expected to fail due to termination)
+	err := session.RunWithOptions([]Value{input}, []Value{output}, ro)
 	if err == nil {
-		t.Fatalf("Expected error when context canceled, got nil")
+		t.Fatalf("Expected error when terminated via RunOptions, got nil")
 	} else {
-		t.Logf("Got expected cancelation error: %s", err)
-	}
-}
-
-func TestRunWithContext_NoCancel_AdvancedSession(t *testing.T) {
-	InitializeRuntime(t)
-	defer CleanupRuntime(t)
-
-	inputData := []int32{100, 237}
-	input, e := NewTensor(NewShape(1, 2), inputData)
-	if e != nil {
-		t.Fatalf("Error creating input tensor: %s\n", e)
-	}
-	defer input.Destroy()
-	output := newTestTensor[int32](t, NewShape(1))
-	defer output.Destroy()
-
-	session, e := NewAdvancedSession("test_data/example ż 大 김.onnx", []string{"in"}, []string{"out"}, []Value{input}, []Value{output}, nil)
-	if e != nil {
-		t.Fatalf("Failed creating session: %s\n", e)
-	}
-	defer session.Destroy()
-
-	ctx := context.Background()
-	err := session.RunWithContext(ctx)
-	if err != nil {
-		t.Fatalf("RunWithContext should succeed without cancel: %s\n", err)
-	}
-	expected := inputData[0] + inputData[1]
-	if output.GetData()[0] != expected {
-		t.Errorf("Incorrect result. Expected %d, got %d.\n", expected, output.GetData()[0])
+		t.Logf("Got expected termination error: %s", err)
 	}
 }
