@@ -19,7 +19,7 @@ type IntData interface {
 
 // This is used as a type constraint for the generic Tensor type.
 type TensorData interface {
-	FloatData | IntData | ~bool
+	FloatData | IntData | ~bool | ~string
 }
 
 // Returns the ONNX enum value used to indicate TensorData type T.
@@ -51,6 +51,8 @@ func GetTensorElementDataType[T TensorData]() C.ONNXTensorElementDataType {
 		return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64
 	case reflect.Bool:
 		return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL
+	case reflect.String:
+		return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING
 	}
 	return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED
 }
