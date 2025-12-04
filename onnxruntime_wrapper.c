@@ -366,6 +366,17 @@ OrtStatus *CreateOrtTensorWithShape(void *data, size_t data_size,
   return status;
 }
 
+OrtStatus *CreateTensorAsOrtValue(int64_t *shape, int64_t shape_size,
+  ONNXTensorElementDataType dtype, OrtValue **out) {
+  OrtStatus *status = NULL;
+  OrtAllocator *allocator = NULL;
+  status = ort_api->GetAllocatorWithDefaultOptions(&allocator);
+  if (status) return status;
+  status = ort_api->CreateTensorAsOrtValue(allocator, shape, shape_size, dtype,
+    out);
+  return status;
+}
+
 OrtStatus *GetTensorTypeAndShape(const OrtValue *value, OrtTensorTypeAndShapeInfo **out) {
   return ort_api->GetTensorTypeAndShape(value, out);
 }
@@ -523,3 +534,33 @@ OrtStatus *CreateOrtValue(OrtValue **in, size_t num_values,
   return ort_api->CreateValue((const OrtValue* const*) in, num_values,
     value_type, out);
 }
+
+OrtStatus *FillStringTensor(OrtValue *v, char **strings, size_t num_strings) {
+  return ort_api->FillStringTensor(v, (const char* const*) strings,
+    num_strings);
+}
+
+OrtStatus *GetStringTensorDataLength(OrtValue *v, size_t *length) {
+  return ort_api->GetStringTensorDataLength(v, length);
+}
+
+OrtStatus *GetStringTensorContent(OrtValue *v, void *data_buffer,
+  size_t data_size, size_t *offsets_buffer, size_t offsets_length) {
+  return ort_api->GetStringTensorContent(v, data_buffer, data_size,
+    offsets_buffer, offsets_length);
+}
+
+OrtStatus *FillStringTensorElement(OrtValue *v, char *s, size_t index) {
+  return ort_api->FillStringTensorElement(v, s, index);
+}
+
+OrtStatus *GetStringTensorElementLength(OrtValue *v, size_t index,
+  size_t *result) {
+  return ort_api->GetStringTensorElementLength(v, index, result);
+}
+
+OrtStatus *GetStringTensorElement(OrtValue *v, size_t buffer_length,
+  size_t index, void *buffer) {
+  return ort_api->GetStringTensorElement(v, buffer_length, index, buffer);
+}
+

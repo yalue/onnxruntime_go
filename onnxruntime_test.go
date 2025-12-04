@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -232,6 +233,124 @@ func TestBoolTensor(t *testing.T) {
 	for _, b := range tensor2.GetData() {
 		if b {
 			t.Errorf("A new empty bool tensor wasn't initialized to false.\n")
+		}
+	}
+}
+
+func TestStringTensor(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	logContents := func(s *StringTensor, label string) {
+		contents, e := s.GetContents()
+		if e != nil {
+			t.Fatalf("Error getting contents for %s tensor: %s\n", label, e)
+		}
+		t.Logf("Contents of tensor %s:\n", label)
+		for i, v := range contents {
+			t.Logf("  index %d = %s\n", i, v)
+		}
+	}
+
+	// Start with simple string tensor manipulation and verifying error cases.
+	input, e := NewStringTensor(NewShape(2))
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	// I assume these will be blank.
+	logContents(input, "initial values")
+
+	e = input.SetContents([]string{"I", "eat", "popcorn!"})
+	if e == nil {
+		t.Errorf("Didn't get expected error when providing an incorrect " +
+			"number of strings to SetContents.\n")
+	}
+	t.Logf("Got expected error when providing an incorrect number of "+
+		"strings to SetContents: %s\n", e)
+	e = input.SetContents([]string{"what's", "up?"})
+	if e != nil {
+		t.Fatalf("Got error when setting initial tensor contents: %s\n", e)
+	}
+	logContents(input, "after SetContents")
+
+	tmpString, e := input.GetElement(1)
+	if e != nil {
+		t.Fatalf("Error getting tensor element: %s\n", e)
+	}
+	if tmpString != "up?" {
+		t.Errorf("Got incorrect value for tensor element 1. Got \"%s\".\n",
+			tmpString)
+	}
+
+	e = input.SetElement(45, "???")
+	if e == nil {
+		t.Fatalf("Didn't get expected error when setting an element at an " +
+			"invalid index")
+	}
+	t.Logf("Got expected error when setting an element at an invalid "+
+		"index: %s\n", e)
+
+	e = input.SetElement(1, "")
+	if e != nil {
+		t.Fatalf("Error setting element at index 1: %s\n", e)
+	}
+	logContents(input, "after SetElement")
+
+	// Next, we'll test executing a network, including allowing onnxruntime to
+	// auto-allocate a string tensor.
+	inputContents := []string{"Green Beans", "Something Else"}
+	e = input.SetContents(inputContents)
+	if e != nil {
+		t.Fatalf("Error setting final input contents: %s\n", e)
+	}
+	outputUppercase, e := NewStringTensor(NewShape(2))
+	if e != nil {
+		t.Fatalf("Error creating output tensor: %s\n", e)
+	}
+	defer outputUppercase.Destroy()
+	outputs := []Value{outputUppercase, nil}
+
+	filePath := "test_data/example_strings.onnx"
+	session, e := NewDynamicAdvancedSession(filePath, []string{"input"},
+		[]string{"output_upper", "output_lower"}, nil)
+	if e != nil {
+		t.Fatalf("Error creating session for %s: %s\n", filePath, e)
+	}
+	defer session.Destroy()
+
+	e = session.Run([]Value{input}, outputs)
+	if e != nil {
+		t.Fatalf("Error running %s: %s\n", filePath, e)
+	}
+	defer outputs[1].Destroy()
+
+	outputLowercase, ok := outputs[1].(*StringTensor)
+	if !ok {
+		t.Fatalf("Running %s didn't create a StringTensor output", filePath)
+	}
+
+	logContents(input, "input")
+	logContents(outputLowercase, "outputLowercase")
+	logContents(outputUppercase, "outputUppercase")
+
+	uppercaseStrings, e := outputUppercase.GetContents()
+	if e != nil {
+		t.Fatalf("Error getting uppercase contents: %s\n", e)
+	}
+	lowercaseStrings, e := outputLowercase.GetContents()
+	if e != nil {
+		t.Fatalf("Error getting lowercase contents: %s\n", e)
+	}
+
+	for i, original := range inputContents {
+		if strings.ToLower(original) != lowercaseStrings[i] {
+			t.Errorf("Didn't get expected lowercase version of %s, got %s\n",
+				original, lowercaseStrings[i])
+		}
+		if strings.ToUpper(original) != uppercaseStrings[i] {
+			t.Errorf("Didn't get expected uppercase version of %s, got %s\n",
+				original, uppercaseStrings[i])
 		}
 	}
 }
@@ -2251,7 +2370,8 @@ func TestCancelWithRunOptions_AdvancedSession(t *testing.T) {
 	defer output.Destroy()
 
 	filePath := "test_data/example ż 大 김.onnx"
-	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"}, []Value{input}, []Value{output}, nil)
+	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"},
+		[]Value{input}, []Value{output}, nil)
 	if e != nil {
 		t.Fatalf("Failed creating session for %s: %s\n", filePath, e)
 	}

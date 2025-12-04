@@ -242,17 +242,26 @@ OrtStatus *CreateOrtTensorWithShape(void *data, size_t data_size,
   int64_t *shape, int64_t shape_size, OrtMemoryInfo *mem_info,
   ONNXTensorElementDataType dtype, OrtValue **out);
 
+// Creates an OrtValue managed by onnxruntime's default allocator rather than
+// using Go-managed memory. Wraps ort_api->CreateTensorAsOrtValue.
+OrtStatus *CreateTensorAsOrtValue(int64_t *shape, int64_t shape_size,
+  ONNXTensorElementDataType dtype, OrtValue **out);
+
 // Wraps ort_api->GetTensorTypeAndShape
-OrtStatus *GetTensorTypeAndShape(const OrtValue *value, OrtTensorTypeAndShapeInfo **out);
+OrtStatus *GetTensorTypeAndShape(const OrtValue *value,
+  OrtTensorTypeAndShapeInfo **out);
 
 // Wraps ort_api->GetDimensionsCount
-OrtStatus *GetDimensionsCount(const OrtTensorTypeAndShapeInfo *info, size_t *out);
+OrtStatus *GetDimensionsCount(const OrtTensorTypeAndShapeInfo *info,
+  size_t *out);
 
 // Wraps ort_api->GetDimensions
-OrtStatus *GetDimensions(const OrtTensorTypeAndShapeInfo *info, int64_t *dim_values, size_t dim_values_length);
+OrtStatus *GetDimensions(const OrtTensorTypeAndShapeInfo *info,
+  int64_t *dim_values, size_t dim_values_length);
 
 // Wraps ort_api->GetTensorElementType
-OrtStatus *GetTensorElementType(const OrtTensorTypeAndShapeInfo *info, enum ONNXTensorElementDataType *out);
+OrtStatus *GetTensorElementType(const OrtTensorTypeAndShapeInfo *info,
+  enum ONNXTensorElementDataType *out);
 
 // Wraps ort_api->ReleaseTensorTypeAndShapeInfo
 void ReleaseTensorTypeAndShapeInfo(OrtTensorTypeAndShapeInfo *input);
@@ -334,6 +343,27 @@ OrtStatus *GetValueCount(OrtValue *v, size_t *out);
 // Wraps ort_api->CreateValue to create a map or a sequence.
 OrtStatus *CreateOrtValue(OrtValue **in, size_t num_values,
   enum ONNXType value_type, OrtValue **out);
+
+// Wraps ort_api->FillStringTensor
+OrtStatus *FillStringTensor(OrtValue *v, char **strings, size_t num_strings);
+
+// Wraps ort_api->GetStringTensorDataLength
+OrtStatus *GetStringTensorDataLength(OrtValue *v, size_t *length);
+
+// Wraps ort_api->GetStringTensorContent
+OrtStatus *GetStringTensorContent(OrtValue *v, void *data_buffer,
+  size_t data_size, size_t *offsets_buffer, size_t offsets_length);
+
+// Wraps ort_api->FillStringTensorElement
+OrtStatus *FillStringTensorElement(OrtValue *v, char *s, size_t index);
+
+// Wraps ort_api->GetStringTensorElementLength
+OrtStatus *GetStringTensorElementLength(OrtValue *v, size_t index,
+  size_t *result);
+
+// Wraps ort_api->GetStringTensorElement
+OrtStatus *GetStringTensorElement(OrtValue *v, size_t buffer_length,
+  size_t index, void *buffer);
 
 #ifdef __cplusplus
 }  // extern "C"

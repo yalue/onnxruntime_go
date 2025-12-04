@@ -1026,6 +1026,177 @@ func (t *CustomDataTensor) GetData() []byte {
 	return t.data
 }
 
+// This represents an onnxruntime tensor containing strings. This still
+// satisfies the Value interface, but has several important differences with
+// Tensor[T] instances for numerical values. Most notably,
+// StringTensor.GetContents() returns a _copy_ of the tensor's contents, and
+// modifying these strings will not modify the contents of the underlying
+// tensor. Instead, users must use StringTensor.SetElement(...) or
+// StringTensor.SetContents(...) to modify the contents of an existing string
+// tensor.
+type StringTensor struct {
+	shape    Shape
+	ortValue *C.OrtValue
+}
+
+// Creates and returns a string tensor. The contents are _not_ initialized yet,
+// and must be initialized using SetContents or, less efficiently, using
+// SetElement to set each string individually. As with all Values,
+// StringTensors must be freed using Destroy() when no longer needed.
+func NewStringTensor(shape Shape) (*StringTensor, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	e := shape.Validate()
+	if e != nil {
+		return nil, fmt.Errorf("Invalid string tensor shape: %w", e)
+	}
+
+	var ortValue *C.OrtValue
+	status := C.CreateTensorAsOrtValue((*C.int64_t)(&shape[0]),
+		C.int64_t(len(shape)), C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING,
+		&ortValue)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+
+	return &StringTensor{
+		shape:    shape.Clone(),
+		ortValue: ortValue,
+	}, nil
+}
+
+// This sets all of the strings in t to the contents from the flattened slice
+// of strings. The length of the contents slice must match
+// t.GetShape().FlattenedSize(), otherwise this will return an error.
+func (t *StringTensor) SetContents(contents []string) error {
+	if int64(len(contents)) != t.shape.FlattenedSize() {
+		// I'm sure the C API detects this as well, but we can check for it
+		// here before needing to allocate a bunch of strings.
+		return fmt.Errorf("Was provided %d strings, but %d are required",
+			len(contents), t.shape.FlattenedSize())
+	}
+	if len(contents) == 0 {
+		return nil
+	}
+	cStrings := make([]*C.char, len(contents))
+	for i, s := range contents {
+		cStrings[i] = C.CString(s)
+	}
+	defer freeCStrings(cStrings)
+	status := C.FillStringTensor(t.ortValue, &(cStrings[0]),
+		C.size_t(len(contents)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Sets the string at the flattened index in t to s.
+func (t *StringTensor) SetElement(index int64, s string) error {
+	cString := C.CString(s)
+	defer C.free(unsafe.Pointer(cString))
+	status := C.FillStringTensorElement(t.ortValue, cString, C.size_t(index))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Returns all contents of the string tensor, in order by flattened index.
+// If you need to get all contents in the tensor, this should be more efficient
+// than using GetElement(...) to retrieve all strings individually. This
+// copies the tensor's contents; modifying the returned slice will not modify
+// the tensor.
+func (t *StringTensor) GetContents() ([]string, error) {
+	var dataSize C.size_t
+	status := C.GetStringTensorDataLength(t.ortValue, &dataSize)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	if dataSize == 0 {
+		// A quick optimization where all the strings are empty, avoids needing
+		// to mess around with nil pointers, too.
+		return make([]string, t.shape.FlattenedSize()), nil
+	}
+	// I'm assuming nonzero data length implies a non-empty shape.
+	dataBuffer := make([]byte, dataSize)
+	offsets := make([]C.size_t, t.shape.FlattenedSize())
+
+	// Invoke the C API
+	status = C.GetStringTensorContent(t.ortValue,
+		unsafe.Pointer(&(dataBuffer[0])), dataSize, &(offsets[0]),
+		C.size_t(len(offsets)))
+	if status != nil {
+		return nil, statusToError(status)
+	}
+
+	// Extract the individual strings from the data buffer using their offsets.
+	toReturn := make([]string, len(offsets))
+	for i := range offsets {
+		if i == (len(offsets) - 1) {
+			// The last string doesn't have an end offset; it just goes to the
+			// end of the buffer.
+			toReturn[i] = string(dataBuffer[offsets[i]:])
+			break
+		}
+		toReturn[i] = string(dataBuffer[offsets[i]:offsets[i+1]])
+	}
+
+	return toReturn, nil
+}
+
+// Returns a single string from t, at the given flattened index.
+func (t *StringTensor) GetElement(index int64) (string, error) {
+	var length C.size_t
+	status := C.GetStringTensorElementLength(t.ortValue, C.size_t(index),
+		&length)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	if length == 0 {
+		return "", nil
+	}
+	data := make([]byte, length)
+	status = C.GetStringTensorElement(t.ortValue, length, C.size_t(index),
+		unsafe.Pointer(&(data[0])))
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return string(data), nil
+}
+
+// Always returns C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING
+func (t *StringTensor) DataType() C.ONNXTensorElementDataType {
+	return C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING
+}
+
+func (t *StringTensor) GetShape() Shape {
+	return t.shape.Clone()
+}
+
+func (t *StringTensor) Destroy() error {
+	C.ReleaseOrtValue(t.ortValue)
+	t.ortValue = nil
+	t.shape = nil
+	return nil
+}
+
+func (t *StringTensor) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
+		ortValue: t.ortValue,
+	}
+}
+
+// ZeroContents() is unsupported for string tensors. To clear all strings, use
+// err := t.SetContents(make([]string, t.GetShape().FlattenedSize())) instead.
+func (t *StringTensor) ZeroContents() {
+}
+
+func (t *StringTensor) GetONNXType() ONNXType {
+	return ONNXTypeTensor
+}
+
 // Scalar is like a tensor but the underlying go slice is of length 1 and it
 // has no dimension. It was introduced for use with the training API, but
 // remains supported since it may be useful apart from the training API.
@@ -2387,41 +2558,58 @@ func createGoValueFromOrtValue(v *C.OrtValue) (Value, error) {
 }
 
 // Must only be called if v is known to be of type ONNXTensor. Returns a Tensor
-// wrapping v with the correct Go type. This function always copies v's
-// contents into a new Tensor backed by a Go-managed slice and releases v.
+// wrapping v with the correct Go type. For non-string tensors this will copy
+// the tensor's data into a go-managed slice. In case of errors, this will
+// destroy the original value. In all non-error cases, the returned value must
+// be destroyed by the caller.
+//
+// The issue is that GetTensorMutableData() becomes invalid after v is
+// Released, so we can't release the original OrtValue if a reference to the
+// data slice returned by GetData is still in use elsewhere in go code. We work
+// around this by copying the data into a new OrtValue with a Go-backed buffer.
+// (String tensors are easier, since they can't have mutable data buffers in
+// the first place.)
 func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
-	// Either in the case of error or otherwise, we'll release v. The issue is
-	// that GetTensorMutableData() becomes invalid after v is Released, so we
-	// can't release v if a reference to the slice returned by GetData is
-	// still referred to outside of the tensor. We work around this by copying
-	// the data into a new tensor and releasing the original.
-	defer C.ReleaseOrtValue(v)
-
 	var pInfo *C.OrtTensorTypeAndShapeInfo
 	status := C.GetTensorTypeAndShape(v, &pInfo)
 	if status != nil {
+		C.ReleaseOrtValue(v)
 		return nil, fmt.Errorf("Error getting type and shape: %w",
 			statusToError(status))
 	}
 	shape, e := getShapeFromInfo(pInfo)
 	if e != nil {
+		C.ReleaseOrtValue(v)
 		return nil, fmt.Errorf("Error getting shape from TypeAndShapeInfo: %w",
 			e)
 	}
 	var tensorElementType C.ONNXTensorElementDataType
 	status = C.GetTensorElementType(pInfo, (*uint32)(&tensorElementType))
 	if status != nil {
+		C.ReleaseOrtValue(v)
 		return nil, fmt.Errorf("Error getting tensor element type: %w",
 			statusToError(status))
 	}
 	C.ReleaseTensorTypeAndShapeInfo(pInfo)
+
+	if tensorElementType == C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING {
+		// String tensors. No go-managed data, so no copying needed.
+		return &StringTensor{
+			shape:    shape,
+			ortValue: v,
+		}, nil
+	}
+
+	// For non-string tensors, we will always release the original OrtValue.
+	defer C.ReleaseOrtValue(v)
+
+	// Now we start the process of copying the data into a Go-backed OrtValue.
 	var tensorData unsafe.Pointer
 	status = C.GetTensorMutableData(v, &tensorData)
 	if status != nil {
 		return nil, fmt.Errorf("Error getting tensor mutable data: %w",
 			statusToError(status))
 	}
-
 	switch tensorType := TensorElementDataType(tensorElementType); tensorType {
 	case TensorElementDataTypeFloat:
 		return createTensorWithCData[float32](shape, tensorData)
