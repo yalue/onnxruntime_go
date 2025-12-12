@@ -26,10 +26,10 @@ systems.
 Additionally, this library uses Go's recent addition of generics to support
 multiple Tensor data types; see the `NewTensor` or `NewEmptyTensor` functions.
 
-**IMPORTANT:** As of onnxruntime_go v1.12.0 or above, for CUDA acceleration we
-now require the use of CUDA 12.x and CuDNN 9.x (as required by onnxruntime
-v1.19.0+). Those wishing to stay on CUDA 11.8 should remain on onnxruntime_go
-v1.11.0 or below.
+Several accelerated execution providers (including TensorRT, CUDA and CoreML)
+are tested and confirmed to work with `onnxruntime_go`.  The "Requirements"
+portion of this README (below) has a few more details.
+
 
 Note on onnxruntime Library Versions
 ------------------------------------
@@ -71,19 +71,24 @@ support, where you may need other shared-library files, such as
 Requirements
 ------------
 
-To use this library, you'll need a version of Go with cgo support.  If you are
-not using an amd64 version of Windows or Linux (or if you want to provide your
-own library for some other reason), you simply need to provide the correct path
-to the shared library when initializing the wrapper.  This is seen in the first
-few lines of the following example.
+To use this library, you'll need a version of Go with cgo support.  You'll also
+need a copy of the correct version of the onnxruntime shared library or DLL for
+your operating system and architecture.  Prior to initializing
+`onnxruntime_go`, you need to provide a path to this shared library.  See the
+first couple lines (i.e., `ort.SetSharedLibraryPath(...)`) of the following
+example.
 
-Note that if you want to use CUDA, you'll need to be using a version of the
-onnxruntime shared library with CUDA support, as well as be using a CUDA
-version supported by the underlying version of your onnxruntime library. For
-example, version 1.22.0 of the onnxruntime library only supports CUDA versions
-12.x. See
+If you want to use CUDA, you'll need to be using a version of the onnxruntime
+shared library with CUDA support, as well as be using a CUDA version supported
+by the underlying version of your onnxruntime library.  For example, version
+1.22.0 of the onnxruntime library only supports CUDA versions 12.x.  See
 [the onnxruntime CUDA support documentation](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)
 for more specifics.
+
+Similarly to CUDA, other execution providers have their own separate
+requirements.  All of these requirements are too numerous to document in this
+README.  Please ensure that you are successfully able to use your execution
+provider of choice in a python script before raising issues about it here.
 
 
 Example Usage
