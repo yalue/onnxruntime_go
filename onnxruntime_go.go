@@ -518,40 +518,31 @@ func NewTensor[T TensorData](s Shape, data []T) (*Tensor[T], error) {
 type TensorElementDataType int
 
 const (
-	TensorElementDataTypeUndefined = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED
-	TensorElementDataTypeFloat     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT
-	TensorElementDataTypeUint8     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8
-	TensorElementDataTypeInt8      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8
-	TensorElementDataTypeUint16    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16
-	TensorElementDataTypeInt16     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16
-	TensorElementDataTypeInt32     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32
-	TensorElementDataTypeInt64     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64
-	TensorElementDataTypeString    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING
-	TensorElementDataTypeBool      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL
-	TensorElementDataTypeFloat16   = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16
-	TensorElementDataTypeDouble    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE
-	TensorElementDataTypeUint32    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32
-	TensorElementDataTypeUint64    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64
-
-	// Not supported by onnxruntime (as of onnxruntime version 1.22.0)
-	TensorElementDataTypeComplex64 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64
-	// Not supported by onnxruntime (as of onnxruntime version 1.22.0)
-	TensorElementDataTypeComplex128 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128
-
-	// Non-IEEE floating-point format based on IEEE754 single-precision
-	TensorElementDataTypeBFloat16 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16
-
-	// 8-bit float types, introduced in onnx 1.14.  See
-	// https://onnx.ai/onnx/technical/float8.html
-	TensorElementDataTypeFloat8E4M3FN   = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FN
-	TensorElementDataTypeFloat8E4M3FNUZ = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FNUZ
-	TensorElementDataTypeFloat8E5M2     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2
-	TensorElementDataTypeFloat8E5M2FNUZ = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2FNUZ
-
-	// Int4 types were introduced in ONNX 1.16. See
-	// https://onnx.ai/onnx/technical/int4.html
-	TensorElementDataTypeUint4 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT4
-	TensorElementDataTypeInt4  = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT4
+	TensorElementDataTypeUndefined  = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED
+	TensorElementDataTypeFloat      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT  // maps to c type float
+	TensorElementDataTypeUint8      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8  // maps to c type uint8_t
+	TensorElementDataTypeInt8       = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8   // maps to c type int8_t
+	TensorElementDataTypeUint16     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16 // maps to c type uint16_t
+	TensorElementDataTypeInt16      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16  // maps to c type int16_t
+	TensorElementDataTypeInt32      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32  // maps to c type int32_t
+	TensorElementDataTypeInt64      = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64  // maps to c type int64_t
+	TensorElementDataTypeString     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING // maps to c++ type std::string
+	TensorElementDataTypeBool       = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL
+	TensorElementDataTypeFloat16    = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16
+	TensorElementDataTypeDouble     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE     // maps to c type double
+	TensorElementDataTypeUint32     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32     // maps to c type uint32_t
+	TensorElementDataTypeUint64     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64     // maps to c type uint64_t
+	TensorElementDataTypeComplex64  = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64  // complex with float32 real and imaginary components
+	TensorElementDataTypeComplex128 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128 // complex with float64 real and imaginary components
+	TensorElementDataTypeBFloat16   = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16   // Non-IEEE floating-point format based on IEEE754 single-precision
+	// float 8 types were introduced in onnx 1.14, see https://onnx.ai/onnx/technical/float8.html
+	TensorElementDataTypeFloat8E4M3FN   = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FN   // Non-IEEE floating-point format based on IEEE754 single-precision
+	TensorElementDataTypeFloat8E4M3FNUZ = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E4M3FNUZ // Non-IEEE floating-point format based on IEEE754 single-precision
+	TensorElementDataTypeFloat8E5M2     = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2     // Non-IEEE floating-point format based on IEEE754 single-precision
+	TensorElementDataTypeFloat8E5M2FNUZ = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E5M2FNUZ // Non-IEEE floating-point format based on IEEE754 single-precision
+	// Int4 types were introduced in ONNX 1.16. See https://onnx.ai/onnx/technical/int4.html
+	TensorElementDataTypeUint4 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT4 // maps to a pair of packed uint4 values (size == 1 byte)
+	TensorElementDataTypeInt4  = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT4  // maps to a pair of packed int4 values (size == 1 byte)
 )
 
 func (t TensorElementDataType) String() string {
