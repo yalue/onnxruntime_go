@@ -61,8 +61,8 @@ Adding New Files
 
  - Apart from testing data, try not to add new source files.
 
- - Do not add third-party code or headers.  The only exception for now is
-   `onnxruntime_c_api.h`.
+ - Do not add third-party code or headers.  The only exceptions for now are
+   `onnxruntime_c_api.h` and `onnxruntime_ep_c_api.h`.
 
  - No C++ at all. Developing Go-to-C wrappers is annoying enough as it is.
 
