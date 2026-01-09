@@ -355,6 +355,81 @@ func TestStringTensor(t *testing.T) {
 	}
 }
 
+func TestComplexTensor(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	// Prepare our inputs: a vector of 11 random complex64 and complex128
+	// values
+	inputSize := 11
+	inputShape := NewShape(int64(inputSize))
+	input64 := make([]complex64, inputSize)
+	input128 := make([]complex128, inputSize)
+	rng := rand.New(rand.NewSource(1337))
+	for i := 0; i < inputSize; i++ {
+		input64[i] = complex(rng.Float32(), rng.Float32())
+		input128[i] = complex(rng.Float64(), rng.Float64())
+	}
+	inputTensor64, e := NewTensor(inputShape, input64)
+	if e != nil {
+		t.Fatalf("Error creating complex64 input tensor: %s\n", e)
+	}
+	defer inputTensor64.Destroy()
+	inputTensor128, e := NewTensor(inputShape, input128)
+	if e != nil {
+		t.Fatalf("Error creating complex128 input tensor: %s\n", e)
+	}
+	defer inputTensor128.Destroy()
+
+	filePath := "test_data/example_complex_numbers.onnx"
+	session, e := NewDynamicAdvancedSession(filePath,
+		[]string{"in_c64", "in_c128"}, []string{"out_c64", "out_c128"}, nil)
+	if e != nil {
+		t.Fatalf("Error creating session for %s: %s\n", filePath, e)
+	}
+	defer session.Destroy()
+
+	// We'll let onnxruntime allocate the output tensors, to make sure that
+	// code path also works.
+	outputs := []Value{nil, nil}
+	e = session.Run([]Value{inputTensor64, inputTensor128}, outputs)
+	if e != nil {
+		t.Fatalf("Error running %s: %s\n", filePath, e)
+	}
+	defer outputs[0].Destroy()
+	defer outputs[1].Destroy()
+
+	outputTensor64, ok := outputs[0].(*Tensor[complex64])
+	if !ok {
+		dataType := TensorElementDataType(outputs[0].DataType())
+		t.Fatalf("Didn't get complex64 output, got type %s instead\n",
+			dataType)
+	}
+	outputTensor128, ok := outputs[1].(*Tensor[complex128])
+	if !ok {
+		dataType := TensorElementDataType(outputs[1].DataType())
+		t.Fatalf("Didn't get complex128 output, got type %s instead\n",
+			dataType)
+	}
+	outputValues64 := outputTensor64.GetData()
+	outputValues128 := outputTensor128.GetData()
+	for i := 0; i < inputSize; i++ {
+		expected64 := input64[i]
+		expected128 := input128[i]
+		actual64 := outputValues64[i]
+		actual128 := outputValues128[i]
+
+		if expected64 != actual64 {
+			t.Errorf("Complex64 output %d doesn't match expected value. "+
+				"Expected %v, got %v\n", i, expected64, actual64)
+		}
+		if expected128 != actual128 {
+			t.Errorf("Complex128 output %d doesn't match expected value. "+
+				"Expected %v, got %v\n", i, expected128, actual128)
+		}
+	}
+}
+
 func TestBadTensorShapes(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)

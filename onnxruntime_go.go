@@ -2622,6 +2622,10 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 		return createTensorWithCData[uint32](shape, tensorData)
 	case TensorElementDataTypeUint64:
 		return createTensorWithCData[uint64](shape, tensorData)
+	case TensorElementDataTypeComplex64:
+		return createTensorWithCData[complex64](shape, tensorData)
+	case TensorElementDataTypeComplex128:
+		return createTensorWithCData[complex128](shape, tensorData)
 	case TensorElementDataTypeBool:
 		return createTensorWithCData[bool](shape, tensorData)
 	default:
