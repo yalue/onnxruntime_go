@@ -117,7 +117,7 @@ import (
 func main() {
     // This line _may_ be optional; by default the library will try to load
     // "onnxruntime.dll" on Windows, and "onnxruntime.so" on any other system.
-    // For stability, it is probably a good idea to always set this explicitly.
+    // For stability, programs should always set this explicitly.
     ort.SetSharedLibraryPath("path/to/onnxruntime.so")
 
     err := ort.InitializeEnvironment()
@@ -165,14 +165,24 @@ func main() {
 Deprecated APIs
 ---------------
 
-Older versions of this library used a typed `Session[T]` struct to keep track
-of sessions. In retrospect, associating type parameters with Sessions was
-unnecessary, and the `AdvancedSession` type, along with its associated APIs,
-was added to rectify this mistake.  For backwards compatibility, the old typed
-`Session[T]` and `DynamicSession[T]` types are still included and unlikely to
-be removed.  However, they now delegate their functionality to
-`AdvancedSession` internally.  New code should always favor using
-`AdvancedSession` directly.
+**Typed `Session[t]`:** Older versions of this library used a typed
+`Session[T]` struct to keep track of sessions. In retrospect, associating type
+parameters with Sessions was unnecessary, and the `AdvancedSession` type, along
+with its associated APIs, was added to rectify this mistake.  For backwards
+compatibility, the old typed `Session[T]` and `DynamicSession[T]` types are
+still included and unlikely to be removed.  However, they now delegate their
+functionality to `AdvancedSession` internally.  New code should always favor
+using `AdvancedSession` directly.
+
+**Onnxruntime's training API:** The training API has been deprecated as of
+onnxruntime version 1.20.  Rather than continuing to maintain wrappers for a
+deprecated API, `onnxruntime_go` has replaced the wrapper functions for the
+training API with stubs that return an error.  Users who need to continue to
+use the training API will need to use an older version.  For example the
+following versions should be compatible with training:
+
+ - Version `v1.12.1` of `onnxruntime_go`, and
+ - Version 1.19.2 of `onnxruntime`.
 
 
 Running Tests and System Compatibility for Testing
@@ -208,16 +218,3 @@ want accelerator-related tests to run, you should set the environment variable
 to the path to the onnxruntime shared library.  Afterwards, `go test -v` should
 run and pass.
 
-
-Training API Support
---------------------
-
-The training API has been deprecated as of onnxruntime version 1.20.  Rather
-than continuing to maintain wrappers for a deprecated API, `onnxruntime_go` has
-replaced the wrapper functions for the training API with stubs that return an
-error.  Users who need to continue to use the training API will need to use an
-older version.  For example the following versions should be compatible with
-training:
-
- - Version `v1.12.1` of `onnxruntime_go`, and
- - Version 1.19.2 of `onnxruntime`.
