@@ -222,6 +222,17 @@ OrtStatus *AppendExecutionProvider(OrtSessionOptions *o,
     keys, values, num_keys);
 }
 
+OrtStatus *RegisterExecutionProviderLibrary(OrtEnv *env,
+  const char *registration_name, char *path) {
+  return ort_api->RegisterExecutionProviderLibrary(env, registration_name,
+    (const ORTCHAR_T *) path);
+}
+
+OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
+  const char *registration_name) {
+  return ort_api->UnregisterExecutionProviderLibrary(env, registration_name);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
     OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
@@ -563,4 +574,3 @@ OrtStatus *GetStringTensorElement(OrtValue *v, size_t buffer_length,
   size_t index, void *buffer) {
   return ort_api->GetStringTensorElement(v, buffer_length, index, buffer);
 }
-
