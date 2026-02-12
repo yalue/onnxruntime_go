@@ -269,6 +269,42 @@ func SetEnvironmentLogLevel(level LoggingLevel) error {
 	return nil
 }
 
+// RegisterExecutionProviderLibrary registers a dynamic execution provider
+// library. The library must export 'CreateEpFactories' and 'ReleaseEpFactory'
+// functions.
+func RegisterExecutionProviderLibrary(registrationName, libraryPath string) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	cName := C.CString(registrationName)
+	defer C.free(unsafe.Pointer(cName))
+	cPath, err := createOrtCharString(libraryPath)
+	if err != nil {
+		return err
+	}
+	defer C.free(unsafe.Pointer(cPath))
+	status := C.RegisterExecutionProviderLibrary(ortEnv, cName, cPath)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// UnregisterExecutionProviderLibrary unregisters a dynamic execution provider
+// library previously registered with RegisterExecutionProviderLibrary.
+func UnregisterExecutionProviderLibrary(registrationName string) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	cName := C.CString(registrationName)
+	defer C.free(unsafe.Pointer(cName))
+	status := C.UnregisterExecutionProviderLibrary(ortEnv, cName)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // The Shape type holds the shape of the tensors used by the network input and
 // outputs.
 type Shape []int64

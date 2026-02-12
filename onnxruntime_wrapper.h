@@ -155,10 +155,18 @@ OrtStatus *AppendExecutionProviderDirectML(OrtSessionOptions *o,
 OrtStatus *AppendExecutionProviderOpenVINOV2(OrtSessionOptions *o,
   const char **keys, const char **values, int num_keys);
 
-// Wraps ort_api->AppendExecutionProvider
+// Wraps ort_api->SessionOptionsAppendExecutionProvider
 OrtStatus *AppendExecutionProvider(OrtSessionOptions *o,
   const char *provider_name, const char **keys, const char **values,
   int num_keys);
+
+// Wraps ort_api->RegisterExecutionProviderLibrary
+OrtStatus *RegisterExecutionProviderLibrary(OrtEnv *env,
+  const char *registration_name, char *path);
+
+// Wraps ort_api->UnregisterExecutionProviderLibrary
+OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
+  const char *registration_name);
 
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
