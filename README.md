@@ -34,8 +34,8 @@ portion of this README (below) has a few more details.
 Note on onnxruntime Library Versions
 ------------------------------------
 
-At the time of writing, this library uses version 1.23.2 of the onnxruntime
-C API headers.  So, it will probably only work with version 1.23.2 of the
+At the time of writing, this library uses version 1.24.1 of the onnxruntime
+C API headers.  So, it will probably only work with version 1.24.1 of the
 onnxruntime shared libraries, as well.  If you need to use a different version,
 or if I get behind on updating this repository, updating or changing the
 onnxruntime version should be fairly easy:
@@ -43,9 +43,9 @@ onnxruntime version should be fairly easy:
  1. Replace the `onnxruntime_c_api.h` and `onnxruntime_ep_c_api.h` files with
     the versions corresponding to the onnxruntime version you wish to use.
 
- 2. Replace the `test_data/onnxruntime.dll` (or `test_data/onnxruntime*.so`)
-    file with the version corresponding to the onnxruntime version you wish to
-    use.
+ 2. Replace the `test_data/onnxruntime.dll` (or `test_data/onnxruntime*.so`,
+    `test_data/onnxruntime*.dylib`) file with the version corresponding to the
+    onnxruntime version you wish to use.
 
  3. (If you care about DirectML support) Verify that the entries in the
     `DummyOrtDMLAPI` struct in `onnxruntime_wrapper.c` match the order in which
@@ -217,4 +217,3 @@ load a library from `test_data/`. So, if you are using one of these systems or
 want accelerator-related tests to run, you should set the environment variable
 to the path to the onnxruntime shared library.  Afterwards, `go test -v` should
 run and pass.
-
