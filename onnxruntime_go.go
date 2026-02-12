@@ -305,6 +305,148 @@ func UnregisterExecutionProviderLibrary(registrationName string) error {
 	return nil
 }
 
+// ArenaCfg wraps OrtArenaCfg for arena-based allocator configuration.
+type ArenaCfg struct {
+	c *C.OrtArenaCfg
+}
+
+// NewArenaCfg creates a configuration object for an arena-based allocator.
+// maxMem: Use 0 for ORT default.
+// arenaExtendStrategy: Use -1 for ORT default, 0 = kNextPowerOfTwo, 1 = kSameAsRequested.
+// initialChunkSize: Use -1 for ORT default.
+// maxDeadBytesPerChunk: Use -1 for ORT default.
+func NewArenaCfg(maxMem int, arenaExtendStrategy, initialChunkSize, maxDeadBytesPerChunk int) (*ArenaCfg, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	var c *C.OrtArenaCfg
+	status := C.CreateArenaCfg(C.size_t(maxMem), C.int(arenaExtendStrategy),
+		C.int(initialChunkSize), C.int(maxDeadBytesPerChunk), &c)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &ArenaCfg{c: c}, nil
+}
+
+// NewArenaCfgV2 creates a configuration object for an arena-based allocator
+// using string-based configuration keys and size_t values.
+func NewArenaCfgV2(configs map[string]int) (*ArenaCfg, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	numKeys := len(configs)
+	if numKeys == 0 {
+		return NewArenaCfg(0, -1, -1, -1)
+	}
+	keys := make([]*C.char, 0, numKeys)
+	values := make([]C.size_t, 0, numKeys)
+	for k, v := range configs {
+		keys = append(keys, C.CString(k))
+		values = append(values, C.size_t(v))
+	}
+	defer func() {
+		for _, k := range keys {
+			C.free(unsafe.Pointer(k))
+		}
+	}()
+
+	var c *C.OrtArenaCfg
+	status := C.CreateArenaCfgV2(&keys[0], &values[0], C.size_t(numKeys), &c)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &ArenaCfg{c: c}, nil
+}
+
+// Destroy releases the underlying OrtArenaCfg.
+func (c *ArenaCfg) Destroy() {
+	if c.c != nil {
+		C.ReleaseArenaCfg(c.c)
+		c.c = nil
+	}
+}
+
+// CreateAndRegisterAllocator creates an allocator and registers it with the
+// environment, enabling sharing between multiple sessions.
+func CreateAndRegisterAllocator(memInfo *C.OrtMemoryInfo, arenaCfg *ArenaCfg) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	var cArenaCfg *C.OrtArenaCfg
+	if arenaCfg != nil {
+		cArenaCfg = arenaCfg.c
+	}
+	status := C.CreateAndRegisterAllocator(ortEnv, memInfo, cArenaCfg)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// CreateAndRegisterAllocatorV2 creates an allocator of a specific provider
+// type and registers it with the environment.
+func CreateAndRegisterAllocatorV2(providerType string, memInfo *C.OrtMemoryInfo, arenaCfg *ArenaCfg, options map[string]string) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	var cArenaCfg *C.OrtArenaCfg
+	if arenaCfg != nil {
+		cArenaCfg = arenaCfg.c
+	}
+	cProviderType := C.CString(providerType)
+	defer C.free(unsafe.Pointer(cProviderType))
+
+	var keysPtr, valuesPtr **C.char
+	numOptions := len(options)
+	if numOptions > 0 {
+		keys, values := mapToCStrings(options)
+		defer freeCStrings(keys)
+		defer freeCStrings(values)
+		keysPtr = &keys[0]
+		valuesPtr = &values[0]
+	}
+
+	status := C.CreateAndRegisterAllocatorV2(ortEnv, cProviderType, memInfo,
+		cArenaCfg, keysPtr, valuesPtr, C.size_t(numOptions))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// UnregisterAllocator unregisters a previously registered allocator.
+func UnregisterAllocator(memInfo *C.OrtMemoryInfo) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	status := C.UnregisterAllocator(ortEnv, memInfo)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// RegisterAllocator registers a custom allocator with the environment.
+func RegisterAllocator(allocator *C.OrtAllocator) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	status := C.RegisterAllocator(ortEnv, allocator)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// GetMemoryInfo returns the environment-wide OrtMemoryInfo. This can be used
+// when registering shared allocators.
+func GetMemoryInfo() (*C.OrtMemoryInfo, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	return ortMemoryInfo, nil
+}
+
 // The Shape type holds the shape of the tensors used by the network input and
 // outputs.
 type Shape []int64
@@ -2307,7 +2449,7 @@ func (b *IoBinding) GetBoundOutputNames() ([]string, error) {
 
 	// Start by getting go slice views of the C buffers to make it easier to
 	// work with.
-	sizesSlice := unsafe.Slice(resultSizes, resultCount)
+	sizesSlice := unsafe.Slice(resultSizes, int(resultCount))
 	totalSize := uint64(0)
 	// There is likely a more efficient way, but it's much easier to just get
 	// a go slice of the entire buffer. NOTE: The strings in this buffer are
@@ -2320,7 +2462,7 @@ func (b *IoBinding) GetBoundOutputNames() ([]string, error) {
 
 	// We'll take advantage of the byte-slice-to-string conversion to copy the
 	// data into go-managed memory.
-	toReturn := make([]string, resultCount)
+	toReturn := make([]string, int(resultCount))
 	prevEndOffset := uint64(0)
 	for i, stringLength := range sizesSlice {
 		toReturn[i] = string(charsSlice[prevEndOffset:stringLength])
@@ -2361,9 +2503,9 @@ func (b *IoBinding) GetBoundOutputValues() ([]Value, error) {
 	if status != nil {
 		return nil, statusToError(status)
 	}
-	valuesSlice := unsafe.Slice(valuesBuffer, numValues)
+	valuesSlice := unsafe.Slice(valuesBuffer, int(numValues))
 
-	toReturn := make([]Value, numValues)
+	toReturn := make([]Value, int(numValues))
 	for i := range valuesSlice {
 		toReturn[i], e = createGoValueFromOrtValue(valuesSlice[i])
 		if e != nil {
