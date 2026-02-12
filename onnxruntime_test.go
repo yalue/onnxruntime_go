@@ -2444,3 +2444,55 @@ func TestCancelWithRunOptions_DynamicAdvancedSession(t *testing.T) {
 		t.Logf("Got expected termination error: %s", err)
 	}
 }
+
+func TestSharedAllocator(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	memInfo, e := GetMemoryInfo()
+	if e != nil {
+		t.Fatalf("Error getting memory info: %s\n", e)
+	}
+
+	// Create and register a shared allocator with the environment
+	arenaCfg, e := NewArenaCfg(0, -1, -1, -1)
+	if e != nil {
+		t.Fatalf("Error creating arena config: %s\n", e)
+	}
+	defer arenaCfg.Destroy()
+
+	e = CreateAndRegisterAllocator(memInfo, arenaCfg)
+	if e != nil {
+		t.Fatalf("Error registering shared allocator: %s\n", e)
+	}
+	defer UnregisterAllocator(memInfo)
+
+	// Create session options that enable using environment allocators
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+	e = options.AddSessionConfigEntry("session.use_env_allocators", "1")
+	if e != nil {
+		t.Fatalf("Error setting session.use_env_allocators: %s\n", e)
+	}
+
+	// Create multiple sessions sharing the allocator
+	inputData := []int32{1, 2}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+
+	modelPath := "test_data/example_big_fanout.onnx"
+
+	for i := 0; i < 3; i++ {
+		s, e := NewDynamicAdvancedSession(modelPath, nil, nil, options)
+		if e != nil {
+			t.Fatalf("Error creating session %d: %s\n", i, e)
+		}
+		s.Destroy()
+	}
+}

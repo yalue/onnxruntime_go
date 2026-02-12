@@ -168,6 +168,34 @@ OrtStatus *RegisterExecutionProviderLibrary(OrtEnv *env,
 OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
   const char *registration_name);
 
+// Wraps ort_api->CreateArenaCfg
+OrtStatus *CreateArenaCfg(size_t max_mem, int arena_extend_strategy,
+  int initial_chunk_size_bytes, int max_dead_bytes_per_chunk,
+  OrtArenaCfg **out);
+
+// Wraps ort_api->CreateArenaCfgV2
+OrtStatus *CreateArenaCfgV2(const char *const *arena_config_keys,
+  const size_t *arena_config_values, size_t num_keys, OrtArenaCfg **out);
+
+// Wraps ort_api->ReleaseArenaCfg
+void ReleaseArenaCfg(OrtArenaCfg *ptr);
+
+// Wraps ort_api->CreateAndRegisterAllocator
+OrtStatus *CreateAndRegisterAllocator(OrtEnv *env,
+  const OrtMemoryInfo *mem_info, const OrtArenaCfg *arena_cfg);
+
+// Wraps ort_api->CreateAndRegisterAllocatorV2
+OrtStatus *CreateAndRegisterAllocatorV2(OrtEnv *env,
+  const char *provider_type, const OrtMemoryInfo *mem_info,
+  const OrtArenaCfg *arena_cfg, const char *const *provider_options_keys,
+  const char *const *provider_options_values, size_t num_keys);
+
+// Wraps ort_api->RegisterAllocator
+OrtStatus *RegisterAllocator(OrtEnv *env, OrtAllocator *allocator);
+
+// Wraps ort_api->UnregisterAllocator
+OrtStatus *UnregisterAllocator(OrtEnv *env, const OrtMemoryInfo *mem_info);
+
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,

@@ -233,6 +233,44 @@ OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
   return ort_api->UnregisterExecutionProviderLibrary(env, registration_name);
 }
 
+OrtStatus *CreateArenaCfg(size_t max_mem, int arena_extend_strategy,
+  int initial_chunk_size_bytes, int max_dead_bytes_per_chunk,
+  OrtArenaCfg **out) {
+  return ort_api->CreateArenaCfg(max_mem, arena_extend_strategy,
+    initial_chunk_size_bytes, max_dead_bytes_per_chunk, out);
+}
+
+OrtStatus *CreateArenaCfgV2(const char *const *arena_config_keys,
+  const size_t *arena_config_values, size_t num_keys, OrtArenaCfg **out) {
+  return ort_api->CreateArenaCfgV2(arena_config_keys, arena_config_values,
+    num_keys, out);
+}
+
+void ReleaseArenaCfg(OrtArenaCfg *ptr) {
+  ort_api->ReleaseArenaCfg(ptr);
+}
+
+OrtStatus *CreateAndRegisterAllocator(OrtEnv *env,
+  const OrtMemoryInfo *mem_info, const OrtArenaCfg *arena_cfg) {
+  return ort_api->CreateAndRegisterAllocator(env, mem_info, arena_cfg);
+}
+
+OrtStatus *CreateAndRegisterAllocatorV2(OrtEnv *env,
+  const char *provider_type, const OrtMemoryInfo *mem_info,
+  const OrtArenaCfg *arena_cfg, const char *const *provider_options_keys,
+  const char *const *provider_options_values, size_t num_keys) {
+  return ort_api->CreateAndRegisterAllocatorV2(env, provider_type, mem_info,
+    arena_cfg, provider_options_keys, provider_options_values, num_keys);
+}
+
+OrtStatus *RegisterAllocator(OrtEnv *env, OrtAllocator *allocator) {
+  return ort_api->RegisterAllocator(env, allocator);
+}
+
+OrtStatus *UnregisterAllocator(OrtEnv *env, const OrtMemoryInfo *mem_info) {
+  return ort_api->UnregisterAllocator(env, mem_info);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
     OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
