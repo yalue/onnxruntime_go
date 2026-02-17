@@ -24,19 +24,20 @@ func getTestSharedLibraryPath(t testing.TB) string {
 	if toReturn != "" {
 		return toReturn
 	}
-	if runtime.GOOS == "windows" {
+	if (runtime.GOOS == "windows") && (runtime.GOARCH == "amd64") {
 		return "test_data/onnxruntime.dll"
 	}
-	if runtime.GOARCH == "arm64" {
-		if runtime.GOOS == "darwin" {
-			return "test_data/onnxruntime_arm64.dylib"
-		}
+	if (runtime.GOOS == "darwin") && (runtime.GOARCH == "arm64") {
+		return "test_data/onnxruntime_arm64.dylib"
+	}
+	if (runtime.GOOS == "linux") && (runtime.GOARCH == "arm64") {
 		return "test_data/onnxruntime_arm64.so"
 	}
-	if runtime.GOARCH == "amd64" && runtime.GOOS == "darwin" {
-		return "test_data/onnxruntime_amd64.dylib"
-	}
-	return "test_data/onnxruntime.so"
+	t.Fatalf("Unable to find an onnxruntime shared library for GOOS %s and "+
+		"GOARCH %s. Set the ONNXRUNTIME_SHARED_LIBRARY_PATH environment "+
+		"variable to run tests on your system.\n", runtime.GOOS,
+		runtime.GOARCH)
+	return fmt.Sprintf("onnxruntime_%s_%s.so", runtime.GOOS, runtime.GOARCH)
 }
 
 // This must be called prior to running each test.

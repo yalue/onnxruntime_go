@@ -49,8 +49,7 @@ Tests
  - No tests should panic.  Always check errors and fail rather than allowing
    tests to panic.
 
- - Every change must ensure that `go test -v -bench=.` passes on every
-   supported platform.
+ - Every change must ensure that `go test -v -bench=.` passes.
 
  - Every test failure should be accompanied by a message containing the reason,
    either using `t.Logf()`, `t.Errorf()`, or `t.Fatalf()`.
@@ -74,8 +73,8 @@ Adding New Files
    these files are updated.  The libraries that are included were only intended
    to allow a majority of users to run `go test -v -bench=.` without further
    setup or modification. Currently: amd64 Windows, arm64 Linux (I wish I
-   hadn't included this!), arm64 osx, and amd64 osx. All other users must set
-   the `ONNXRUNTIME_SHARED_LIBRARY_PATH` environment variable to a valid path
+   hadn't included this!), and arm64 osx. All other users must set the
+   `ONNXRUNTIME_SHARED_LIBRARY_PATH` environment variable to a valid path
    to the correct `onnxruntime` shared library file prior to running tests.
 
  - If you need to add a .onnx file for a test, place both the .onnx file

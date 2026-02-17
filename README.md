@@ -59,7 +59,7 @@ download from the releases page in the
 for the release you want to use, and extract it. The header files are located
 in the "include" subdirectory, and the shared library will be located in the
 "lib" subdirectory. (On Linux systems, you'll need the version of the .so with
-the appended version numbers, e.g., `libonnxruntime.so.1.23.2`, and _not_ the
+the appended version numbers, e.g., `libonnxruntime.so.1.24.1`, and _not_ the
 `libonnxruntime.so`, which is just a symbolic link.)  The archive will contain
 several other files containing C++ headers, debug symbols, and so on, but you
 shouldn't need anything other than the single onnxruntime shared library and
