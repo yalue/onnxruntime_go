@@ -2,9 +2,11 @@ package onnxruntime_go
 
 import (
 	"fmt"
+	"io/fs"
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -1927,6 +1929,73 @@ func TestSessionOptionsConfig(t *testing.T) {
 	if value != expectedValue {
 		t.Errorf("Got incorrect value for config entry %s: expected %s, "+
 			"got %s\n", key, expectedValue, value)
+	}
+}
+
+func TestSessionWithProfilingAndOptimization(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	tmpDir := t.TempDir()
+	profilePrefix := filepath.Join(tmpDir, "profile")
+	optimizedModelPath := filepath.Join(tmpDir, "optimized_model.onnx")
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+	e = options.SetOptimizedModelFilePath(optimizedModelPath)
+	if e != nil {
+		t.Fatalf("Error setting optimized model file path to %s: %s",
+			optimizedModelPath, e)
+	}
+	e = options.EnableProfiling(profilePrefix)
+	if e != nil {
+		t.Fatalf("Error setting profile path prefix to %s: %s", profilePrefix,
+			e)
+	}
+
+	// Set up and run a useless session to make sure our files got created.
+	originalModelPath := "test_data/example ż 大 김.onnx"
+	input := newTestTensor[int32](t, NewShape(1, 2))
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
+	session, e := NewAdvancedSession(originalModelPath, []string{"in"},
+		[]string{"out"}, []Value{input}, []Value{output}, options)
+	if e != nil {
+		t.Fatalf("Failed creating session: %s\n", e)
+	}
+	e = session.Run()
+	// Destroy the session now so its profile is written.
+	session.Destroy()
+	if e != nil {
+		t.Fatalf("Error running session: %s\n", e)
+	}
+
+	numFiles := 0
+	e = filepath.Walk(tmpDir, func(f string, n fs.FileInfo, e error) error {
+		if e != nil {
+			t.Errorf("Got error traversing temp directory %s: %s\n", tmpDir, e)
+			return e
+		}
+		if f == tmpDir {
+			// Don't log or count the directory itself; we just want to ensure
+			// the profile and the model file were created.
+			return nil
+		}
+		t.Logf("Found file %s: %d bytes\n", f, n.Size())
+		numFiles++
+		return nil
+	})
+	if numFiles < 2 {
+		t.Errorf("Failed to create both a profile and an optimized model;  "+
+			"only found %d files in temp dir %s\n", numFiles, tmpDir)
+	}
+
+	e = options.DisableProfiling()
+	if e != nil {
+		t.Errorf("Error disabling profiling on session options where it "+
+			"was previously enabled: %s\n", e)
 	}
 }
 

@@ -222,6 +222,19 @@ OrtStatus *AppendExecutionProvider(OrtSessionOptions *o,
     keys, values, num_keys);
 }
 
+OrtStatus *SetOptimizedModelFilePath(OrtSessionOptions *o,
+  char *path) {
+  return ort_api->SetOptimizedModelFilePath(o, (const ORTCHAR_T*) path);
+}
+
+OrtStatus *EnableProfiling(OrtSessionOptions *o, char *path) {
+  return ort_api->EnableProfiling(o, (const ORTCHAR_T*) path);
+}
+
+OrtStatus *DisableProfiling(OrtSessionOptions *o) {
+  return ort_api->DisableProfiling(o);
+}
+
 OrtStatus *RegisterExecutionProviderLibrary(OrtEnv *env,
   const char *registration_name, char *path) {
   return ort_api->RegisterExecutionProviderLibrary(env, registration_name,

@@ -1930,6 +1930,46 @@ func (o *SessionOptions) AppendExecutionProvider(providerName string,
 	return nil
 }
 
+// Wraps the SetOptimizedModelFilePath API function for these session options.
+// Onnxruntime will save the optimized model file to the given path, after
+// graph-level transformations.
+func (o *SessionOptions) SetOptimizedModelFilePath(path string) error {
+	ortCharPath, e := createOrtCharString(path)
+	if e != nil {
+		return fmt.Errorf("Error encoding optimized model file path: %w", e)
+	}
+	defer C.free(unsafe.Pointer(ortCharPath))
+	status := C.SetOptimizedModelFilePath(o.o, ortCharPath)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Enables profiling for these session options. The profile will be a JSON file
+// with the given path prefix.
+func (o *SessionOptions) EnableProfiling(profileFilePrefix string) error {
+	ortCharPath, e := createOrtCharString(profileFilePrefix)
+	if e != nil {
+		return fmt.Errorf("Error encoding profile path prefix: %w", e)
+	}
+	defer C.free(unsafe.Pointer(ortCharPath))
+	status := C.EnableProfiling(o.o, ortCharPath)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Disables profiling for these session options.
+func (o *SessionOptions) DisableProfiling() error {
+	status := C.DisableProfiling(o.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.
