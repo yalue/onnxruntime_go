@@ -1836,31 +1836,24 @@ func (o *SessionOptions) AppendExecutionProviderCoreML(flags uint32) error {
 	return nil
 }
 
-// AppendExecutionProviderCoreMLV2 is the new API for adding CoreML provider to ONNX Runtime.
-// This is the recommended way to add CoreML provider as of ONNX Runtime 1.20.0.
+// AppendExecutionProviderCoreMLV2 is the new API for adding CoreML provider to
+// ONNX Runtime. This is the recommended way to add CoreML provider as of
+// onnxruntime 1.20.0.
 //
-// For CoreML options, see:
+// For the list of supported options, see:
 // https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html
 func (o *SessionOptions) AppendExecutionProviderCoreMLV2(options map[string]string) error {
-
-	// Handle case with no options
-	if len(options) == 0 {
-		status := C.AppendExecutionProviderCoreMLV2(o.o, nil, nil, 0)
-		if status != nil {
-			return statusToError(status)
-		}
-		return nil
+	var keysPtr, valuesPtr **C.char
+	if len(options) != 0 {
+		keys, values := mapToCStrings(options)
+		defer freeCStrings(keys)
+		defer freeCStrings(values)
+		keysPtr = &(keys[0])
+		valuesPtr = &(values[0])
 	}
 
-	// Convert map to arrays of keys and values
-	keys, values := mapToCStrings(options)
-	defer freeCStrings(keys)
-	defer freeCStrings(values)
-
-	// Call C function
-	status := C.AppendExecutionProviderCoreMLV2(o.o,
-		&keys[0], &values[0], C.size_t(len(options)))
-
+	status := C.AppendExecutionProviderCoreMLV2(o.o, keysPtr, valuesPtr,
+		C.size_t(len(options)))
 	if status != nil {
 		return statusToError(status)
 	}
