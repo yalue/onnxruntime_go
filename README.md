@@ -129,7 +129,7 @@ func main() {
     // For a slight performance boost and convenience when re-using existing
     // tensors, this library expects the user to create all input and output
     // tensors prior to creating the session. If this isn't ideal for your use
-    // case, see the DynamicAdvancedSession type in the documnentation, which
+    // case, see the DynamicAdvancedSession type in the documentation, which
     // allows input and output tensors to be specified when calling Run()
     // rather than when initializing a session.
     inputData := []float32{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
