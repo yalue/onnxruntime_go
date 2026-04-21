@@ -2072,6 +2072,21 @@ func (o *SessionOptions) DisableProfiling() error {
 	return nil
 }
 
+// Register custom ops from a shared library.
+func (o *SessionOptions) RegisterCustomOpsLibrary(path string) error {
+	ortCharPath, e := createOrtCharString(path)
+	if e != nil {
+		return fmt.Errorf("Unable to convert path to C path: %w", e)
+	}
+	defer C.free(unsafe.Pointer(ortCharPath))
+	status := C.RegisterCustomOpsLibraryV2(o.o, ortCharPath)
+	if status != nil {
+		return statusToError(status)
+	}
+
+	return nil
+}
+
 // Initializes and returns a SessionOptions struct, used when setting options
 // in new AdvancedSession instances. The caller must call the Destroy()
 // function on the returned struct when it's no longer needed.

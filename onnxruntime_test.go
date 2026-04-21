@@ -17,6 +17,18 @@ import (
 // performance on the same random input data.
 const benchmarkRNGSeed = 12345678
 
+// Retrieves the location of the onnxruntime-extension from the environment variable
+// ONNXRUNTIME_EXTENSIONS_SHARED_LIBRARY_PATH. If not set, the test skips.
+func getTestSharedLibraryExtensionPath(t testing.TB) string {
+	env := os.Getenv("ONNXRUNTIME_EXTENSIONS_SHARED_LIBRARY_PATH")
+	if env == "" {
+		t.Skipf("This test requires onnxruntime-extensions. " +
+			"Set the ONNXRUNTIME_EXTENSIONS_SHARED_LIBRARY_PATH environment variable " +
+			"to run this test on your system.")
+	}
+	return env
+}
+
 // If the ONNXRUNTIME_SHARED_LIBRARY_PATH environment variable is set, then
 // we'll try to use its contents as the location of the shared library for
 // these tests. Otherwise, we'll fall back to trying the shared library copies
@@ -633,6 +645,132 @@ func TestBadExecutionProvider(t *testing.T) {
 	}
 	t.Logf("Got expected error when attempting to append a bad execution "+
 		"provider: %s\n", e)
+}
+
+func TestRegisterCustomOpsLibrary(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+
+	e = options.RegisterCustomOpsLibrary(getTestSharedLibraryExtensionPath(t))
+	if e != nil {
+		t.Fatalf("Error registering custom ops library: %s\n", e)
+	}
+}
+
+func TestBadRegisterCustomOpsLibrary(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+
+	e = options.RegisterCustomOpsLibrary("TotalNonsense")
+	if e == nil {
+		t.Fatalf("Didn't get expected error attempting to register a bad " +
+			"custom ops library")
+	}
+	t.Logf("Got expected error when attempting to register a bad "+
+		"custom ops library: %s\n", e)
+}
+
+// Testing the operation of test_data/example_needs_extensions.onnx
+func TestCustomOpsLibrary(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+
+	e = options.RegisterCustomOpsLibrary(getTestSharedLibraryExtensionPath(t))
+	if e != nil {
+		t.Fatalf("Error registering custom ops library: %s\n", e)
+	}
+
+	inputTensor, e := NewStringTensor(Shape{3})
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer inputTensor.Destroy()
+
+	outputTensor, e := NewStringTensor(Shape{3})
+	if e != nil {
+		t.Fatalf("Error creating output tensor: %s\n", e)
+	}
+	defer outputTensor.Destroy()
+
+	inputContents := []string{"i", "eAt", "PoTAtOEs!!"}
+	e = inputTensor.SetContents(inputContents)
+	if e != nil {
+		t.Fatalf("Error setting final input contents: %s\n", e)
+	}
+
+	session, e := NewAdvancedSession("test_data/example_needs_extensions.onnx",
+		[]string{"input"}, []string{"output"},
+		[]ArbitraryTensor{inputTensor}, []ArbitraryTensor{outputTensor}, options)
+	if e != nil {
+		t.Fatalf("Failed creating session: %s\n", e)
+	}
+	defer session.Destroy()
+	e = session.Run()
+	if e != nil {
+		t.Fatalf("Error running session: %s\n", e)
+	}
+
+	output, e := outputTensor.GetContents()
+	if e != nil {
+		t.Fatalf("Error retrieving output tensor: %s\n", e)
+	}
+
+	expectedOutput := []string{"I", "EAT", "POTATOES!!"}
+
+	for i := range expectedOutput {
+		if output[i] != expectedOutput[i] {
+			t.Fatalf("Unexpected output tensor contents: %s != %s", output[i], expectedOutput[i])
+		}
+	}
+}
+
+func TestCustomOpsLibraryWithoutRegistering(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	inputTensor, e := NewStringTensor(Shape{3})
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer inputTensor.Destroy()
+
+	outputTensor, e := NewStringTensor(Shape{3})
+	if e != nil {
+		t.Fatalf("Error creating output tensor: %s\n", e)
+	}
+	defer outputTensor.Destroy()
+
+	inputContents := []string{"i", "eAt", "PoTAtOEs!!"}
+	e = inputTensor.SetContents(inputContents)
+	if e != nil {
+		t.Fatalf("Error setting final input contents: %s\n", e)
+	}
+
+	_, e = NewAdvancedSession("test_data/example_needs_extensions.onnx",
+		[]string{"input"}, []string{"output"},
+		[]ArbitraryTensor{inputTensor}, []ArbitraryTensor{outputTensor}, nil)
+	if e == nil {
+		t.Fatalf("Didn't get expected error attempting to create session for model with unregistered operators")
+	}
+	t.Logf("Got expected error attempting to create session for model with unregistered operators: %s\n", e)
 }
 
 // Used for testing the operation of test_data/example_multitype.onnx

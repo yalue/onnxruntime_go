@@ -248,6 +248,12 @@ OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
   return ort_api->UnregisterExecutionProviderLibrary(env, registration_name);
 }
 
+OrtStatus *RegisterCustomOpsLibraryV2(
+    OrtSessionOptions *o,
+    const char *library_path) {
+    return ort_api->RegisterCustomOpsLibrary_V2(o, library_path);
+}
+
 OrtStatus *GetEpDevices(OrtEnv *env,
   const OrtEpDevice * const **out_devices, size_t *out_count) {
   return ort_api->GetEpDevices(env, out_devices, out_count);
