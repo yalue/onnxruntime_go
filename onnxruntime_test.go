@@ -2566,3 +2566,111 @@ func TestSharedAllocator(t *testing.T) {
 		s.Destroy()
 	}
 }
+
+// Sanity check for the plugin EP (V2) API: GetEpDevices must return without
+// error and produce well-formed (non-empty EpName, non-nil) entries when any
+// are present. We do not assert a specific count because the device list
+// depends on which execution providers were compiled into the loaded
+// onnxruntime shared library and which (if any) plugin libraries were
+// registered before the test.
+func TestGetEpDevices(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	devices, e := GetEpDevices()
+	if e != nil {
+		t.Fatalf("GetEpDevices returned an error: %s\n", e)
+	}
+	t.Logf("GetEpDevices returned %d device(s)\n", len(devices))
+	for i, d := range devices {
+		name := d.EpName()
+		vendor := d.EpVendor()
+		t.Logf("  device %d: ep=%q vendor=%q\n", i, name, vendor)
+		if name == "" {
+			t.Errorf("device %d: empty EpName\n", i)
+		}
+	}
+}
+
+// AppendExecutionProviderV2 must reject an empty device slice rather than
+// dereferencing a nil pointer in the C call.
+func TestAppendExecutionProviderV2EmptyDevices(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	opts, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("NewSessionOptions: %s\n", e)
+	}
+	defer opts.Destroy()
+
+	if e := opts.AppendExecutionProviderV2(nil, nil); e == nil {
+		t.Fatalf("expected error from AppendExecutionProviderV2 with nil " +
+			"devices, got nil\n")
+	}
+	if e := opts.AppendExecutionProviderV2([]EpDevice{}, nil); e == nil {
+		t.Fatalf("expected error from AppendExecutionProviderV2 with empty " +
+			"devices slice, got nil\n")
+	}
+}
+
+// AppendExecutionProviderV2 must reject a slice that contains the zero
+// EpDevice (nil C pointer) before reaching the C call. This guards against
+// callers manually constructing EpDevice{} values.
+func TestAppendExecutionProviderV2NilDevicePointer(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	opts, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("NewSessionOptions: %s\n", e)
+	}
+	defer opts.Destroy()
+
+	if e := opts.AppendExecutionProviderV2([]EpDevice{{}}, nil); e == nil {
+		t.Fatalf("expected error from AppendExecutionProviderV2 with zero " +
+			"EpDevice, got nil\n")
+	}
+}
+
+// When an EpDevice is available, AppendExecutionProviderV2 must surface ORT
+// errors as Go errors rather than panicking. Passing an obviously-bogus
+// option key is the simplest way to provoke a Status without needing a
+// specific plugin to be loaded. The test is skipped when no EpDevice is
+// available (e.g., a minimal onnxruntime build).
+func TestAppendExecutionProviderV2InvalidOption(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	devices, e := GetEpDevices()
+	if e != nil {
+		t.Fatalf("GetEpDevices: %s\n", e)
+	}
+	if len(devices) == 0 {
+		t.Skipf("no EpDevices available on this build; skipping")
+	}
+
+	opts, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("NewSessionOptions: %s\n", e)
+	}
+	defer opts.Destroy()
+
+	// Use a single device so all entries belong to the same EP, as required
+	// by SessionOptionsAppendExecutionProvider_V2.
+	e = opts.AppendExecutionProviderV2(devices[:1], map[string]string{
+		"definitely_not_a_real_option_key": "x",
+	})
+	// Either ORT rejects the unknown option (preferred) or it silently
+	// accepts it. Both are valid library behaviours; what we care about is
+	// that no panic / segfault occurs and that any reported error is a
+	// proper Go error string.
+	if e != nil {
+		t.Logf("ORT rejected bogus option as expected: %s\n", e)
+		if e.Error() == "" {
+			t.Errorf("error returned with empty message\n")
+		}
+		return
+	}
+	t.Logf("ORT silently accepted unknown option (also acceptable)\n")
+}

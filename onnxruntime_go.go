@@ -305,6 +305,117 @@ func UnregisterExecutionProviderLibrary(registrationName string) error {
 	return nil
 }
 
+// EpDevice is an opaque handle to an OrtEpDevice: a single (execution
+// provider, hardware device) pair surfaced by an execution-provider plugin.
+//
+// EpDevice values returned from GetEpDevices are owned by the OrtEnv. Callers
+// must NOT call any release function on them; the underlying OrtEpDevice
+// remains valid until the originating plugin library is unregistered (via
+// UnregisterExecutionProviderLibrary) or the runtime environment is destroyed.
+type EpDevice struct {
+	p *C.OrtEpDevice
+}
+
+// EpName returns the execution provider name that owns this device, e.g.
+// "QNNExecutionProvider" or "OpenVINOExecutionProvider".
+func (d EpDevice) EpName() string {
+	if d.p == nil {
+		return ""
+	}
+	return C.GoString(C.EpDeviceEpName(d.p))
+}
+
+// EpVendor returns the execution provider's vendor string, e.g. "Microsoft"
+// or "Qualcomm".
+func (d EpDevice) EpVendor() string {
+	if d.p == nil {
+		return ""
+	}
+	return C.GoString(C.EpDeviceEpVendor(d.p))
+}
+
+// GetEpDevices returns the list of OrtEpDevice instances known to the
+// runtime, including those contributed by plugin execution providers loaded
+// via RegisterExecutionProviderLibrary. The returned EpDevices remain valid
+// until the corresponding plugin library is unregistered or the environment
+// is destroyed.
+func GetEpDevices() ([]EpDevice, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	var raw **C.OrtEpDevice
+	var count C.size_t
+	status := C.GetEpDevices(ortEnv,
+		(***C.OrtEpDevice)(unsafe.Pointer(&raw)), &count)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	n := int(count)
+	if n == 0 || raw == nil {
+		return nil, nil
+	}
+	// raw points to an array of n const OrtEpDevice* owned by the env.
+	devices := make([]EpDevice, n)
+	src := unsafe.Slice(raw, n)
+	for i := 0; i < n; i++ {
+		devices[i] = EpDevice{p: src[i]}
+	}
+	return devices, nil
+}
+
+// AppendExecutionProviderV2 attaches a plugin execution provider to these
+// session options using one or more OrtEpDevice instances obtained from
+// GetEpDevices. All provided devices must belong to the same execution
+// provider (they are different hardware targets within that EP).
+//
+// This is the plugin-aware path; use it for any execution provider loaded
+// through RegisterExecutionProviderLibrary (QNN, newer OpenVINO, etc.). For
+// execution providers compiled into libonnxruntime, use the dedicated
+// wrappers (AppendExecutionProviderCUDA, AppendExecutionProviderCoreMLV2,
+// ...) or the V1 string-based AppendExecutionProvider.
+//
+// Wraps the C API SessionOptionsAppendExecutionProvider_V2.
+func (o *SessionOptions) AppendExecutionProviderV2(devices []EpDevice,
+	options map[string]string) error {
+	if len(devices) == 0 {
+		return fmt.Errorf("AppendExecutionProviderV2 requires at least one EpDevice")
+	}
+	for i, d := range devices {
+		if d.p == nil {
+			return fmt.Errorf("AppendExecutionProviderV2: devices[%d] "+
+				"is the zero EpDevice", i)
+		}
+	}
+
+	// Marshal device pointers into a contiguous C array. We allocate via
+	// C.malloc to keep the storage stable for the duration of the call (Go
+	// slices may move under GC).
+	ptrSize := C.size_t(unsafe.Sizeof(uintptr(0)))
+	arr := C.malloc(ptrSize * C.size_t(len(devices)))
+	defer C.free(arr)
+	dst := unsafe.Slice((**C.OrtEpDevice)(arr), len(devices))
+	for i, d := range devices {
+		dst[i] = d.p
+	}
+
+	var keysPtr, valuesPtr **C.char
+	if len(options) != 0 {
+		keys, values := mapToCStrings(options)
+		defer freeCStrings(keys)
+		defer freeCStrings(values)
+		keysPtr = &(keys[0])
+		valuesPtr = &(values[0])
+	}
+
+	status := C.AppendExecutionProviderV2(o.o, ortEnv,
+		(**C.OrtEpDevice)(arr), C.size_t(len(devices)),
+		keysPtr, valuesPtr, C.size_t(len(options)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // ArenaCfg wraps OrtArenaCfg for arena-based allocator configuration.
 type ArenaCfg struct {
 	c *C.OrtArenaCfg

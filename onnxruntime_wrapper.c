@@ -248,6 +248,26 @@ OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
   return ort_api->UnregisterExecutionProviderLibrary(env, registration_name);
 }
 
+OrtStatus *GetEpDevices(OrtEnv *env,
+  const OrtEpDevice * const **out_devices, size_t *out_count) {
+  return ort_api->GetEpDevices(env, out_devices, out_count);
+}
+
+const char *EpDeviceEpName(const OrtEpDevice *device) {
+  return ort_api->EpDevice_EpName(device);
+}
+
+const char *EpDeviceEpVendor(const OrtEpDevice *device) {
+  return ort_api->EpDevice_EpVendor(device);
+}
+
+OrtStatus *AppendExecutionProviderV2(OrtSessionOptions *o, OrtEnv *env,
+  const OrtEpDevice * const *ep_devices, size_t num_ep_devices,
+  const char **keys, const char **values, size_t num_keys) {
+  return ort_api->SessionOptionsAppendExecutionProvider_V2(o, env, ep_devices,
+    num_ep_devices, keys, values, num_keys);
+}
+
 OrtStatus *CreateArenaCfg(size_t max_mem, int arena_extend_strategy,
   int initial_chunk_size_bytes, int max_dead_bytes_per_chunk,
   OrtArenaCfg **out) {

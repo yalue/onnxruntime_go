@@ -178,6 +178,23 @@ OrtStatus *RegisterExecutionProviderLibrary(OrtEnv *env,
 OrtStatus *UnregisterExecutionProviderLibrary(OrtEnv *env,
   const char *registration_name);
 
+// Wraps ort_api->GetEpDevices. The returned array is owned by the OrtEnv and
+// must NOT be freed by the caller; the pointers inside it remain valid until
+// the corresponding plugin library is unregistered or the env is released.
+OrtStatus *GetEpDevices(OrtEnv *env,
+  const OrtEpDevice * const **out_devices, size_t *out_count);
+
+// Wraps ort_api->EpDevice_EpName.
+const char *EpDeviceEpName(const OrtEpDevice *device);
+
+// Wraps ort_api->EpDevice_EpVendor.
+const char *EpDeviceEpVendor(const OrtEpDevice *device);
+
+// Wraps ort_api->SessionOptionsAppendExecutionProvider_V2.
+OrtStatus *AppendExecutionProviderV2(OrtSessionOptions *o, OrtEnv *env,
+  const OrtEpDevice * const *ep_devices, size_t num_ep_devices,
+  const char **keys, const char **values, size_t num_keys);
+
 // Wraps ort_api->CreateArenaCfg
 OrtStatus *CreateArenaCfg(size_t max_mem, int arena_extend_strategy,
   int initial_chunk_size_bytes, int max_dead_bytes_per_chunk,
