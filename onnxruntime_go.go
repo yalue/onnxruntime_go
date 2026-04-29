@@ -387,15 +387,14 @@ func (o *SessionOptions) AppendExecutionProviderV2(devices []EpDevice,
 		}
 	}
 
-	// Marshal device pointers into a contiguous C array. We allocate via
-	// C.malloc to keep the storage stable for the duration of the call (Go
-	// slices may move under GC).
-	ptrSize := C.size_t(unsafe.Sizeof(uintptr(0)))
-	arr := C.malloc(ptrSize * C.size_t(len(devices)))
-	defer C.free(arr)
-	dst := unsafe.Slice((**C.OrtEpDevice)(arr), len(devices))
+	arr := make([]*C.OrtEpDevice, len(devices))
 	for i, d := range devices {
-		dst[i] = d.p
+		arr[i] = d.p
+	}
+	var arrPtr **C.OrtEpDevice
+	if len(arr) != 0 {
+		// Avoid dereferencing arr[0] if the array is empty, same as with the options map.
+		arrPtr = &(arr[0])
 	}
 
 	var keysPtr, valuesPtr **C.char
@@ -407,8 +406,7 @@ func (o *SessionOptions) AppendExecutionProviderV2(devices []EpDevice,
 		valuesPtr = &(values[0])
 	}
 
-	status := C.AppendExecutionProviderV2(o.o, ortEnv,
-		(**C.OrtEpDevice)(arr), C.size_t(len(devices)),
+	status := C.AppendExecutionProviderV2(o.o, ortEnv, arrPtr, C.size_t(len(arr)),
 		keysPtr, valuesPtr, C.size_t(len(options)))
 	if status != nil {
 		return statusToError(status)
