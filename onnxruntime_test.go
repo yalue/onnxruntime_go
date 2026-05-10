@@ -1869,9 +1869,6 @@ func TestIoBinding(t *testing.T) {
 	// TODO: Create a slightly better test for I/O bindings:
 	//  - Maybe make it something with a fixed input that will perform better
 	//    if bound and unchanged.
-	//  - Have multiple outputs, including ones with multibyte chars in their
-	//    names (if this is supported). This would better exercise the
-	//    GetBoundOutputNames function.
 	filePath := "test_data/example ż 大 김.onnx"
 
 	session, e := NewDynamicAdvancedSession(filePath, nil, nil, nil)
@@ -1954,6 +1951,113 @@ func TestIoBinding(t *testing.T) {
 	if outputTensor.GetData()[0] != 1337 {
 		t.Fatalf("Bad output value, expected 1337, got %d\n",
 			outputTensor.GetData()[0])
+	}
+}
+
+func TestGetBoundOutputNamesMultiple(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	session, e := NewDynamicAdvancedSession(
+		"test_data/example_several_inputs_and_outputs.onnx", nil, nil, nil)
+	if e != nil {
+		t.Fatalf("Error creating session: %s\n", e)
+	}
+	defer session.Destroy()
+	binding, e := session.CreateIoBinding()
+	if e != nil {
+		t.Fatalf("Error creating I/O binding: %s\n", e)
+	}
+	defer binding.Destroy()
+
+	out1, e := NewEmptyTensor[int64](NewShape(10, 10))
+	if e != nil {
+		t.Fatalf("Error creating out1: %s\n", e)
+	}
+	defer out1.Destroy()
+	out2, e := NewEmptyTensor[float64](NewShape(1, 2, 3, 4, 5))
+	if e != nil {
+		t.Fatalf("Error creating out2: %s\n", e)
+	}
+	defer out2.Destroy()
+	outName1 := "output 1"
+	outName2 := "output 2"
+	if e = binding.BindOutput(outName1, out1); e != nil {
+		t.Fatalf("Error binding output 1: %s\n", e)
+	}
+	if e = binding.BindOutput(outName2, out2); e != nil {
+		t.Fatalf("Error binding output 2: %s\n", e)
+	}
+
+	names, e := binding.GetBoundOutputNames()
+	if e != nil {
+		t.Fatalf("Error getting bound output names: %s\n", e)
+	}
+	want := []string{outName1, outName2}
+	if len(names) != len(want) {
+		t.Fatalf("Expected %d names, got %d: %v\n", len(want), len(names), names)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("names[%d] = %q, want %q\n", i, names[i], want[i])
+		}
+	}
+}
+
+func TestGetBoundOutputNamesMultipleWithMultibyteChars(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	session, e := NewDynamicAdvancedSession(
+		"test_data/example_several_inputs_and_outputs.onnx", nil, nil, nil)
+	if e != nil {
+		t.Fatalf("Error creating session: %s\n", e)
+	}
+	defer session.Destroy()
+	binding, e := session.CreateIoBinding()
+	if e != nil {
+		t.Fatalf("Error creating I/O binding: %s\n", e)
+	}
+	defer binding.Destroy()
+
+	in1, e := NewEmptyTensor[int32](NewShape(1))
+	if e != nil {
+		t.Fatalf("Error creating in1: %s\n", e)
+	}
+	defer in1.Destroy()
+	out1, e := NewEmptyTensor[int64](NewShape(10, 10))
+	if e != nil {
+		t.Fatalf("Error creating out1: %s\n", e)
+	}
+	defer out1.Destroy()
+	out2, e := NewEmptyTensor[float64](NewShape(1, 2, 3, 4, 5))
+	if e != nil {
+		t.Fatalf("Error creating out2: %s\n", e)
+	}
+	defer out2.Destroy()
+
+	// Each name has multiple multibyte characters, and the two output names
+	// have differing byte-lengths to exercise the slicing math used in
+	// GetBoundOutputNames.
+	outName1 := "β出力"
+	outName2 := "γδε結果"
+	if e = binding.BindOutput(outName1, out1); e != nil {
+		t.Fatalf("Error binding %q: %s\n", outName1, e)
+	}
+	if e = binding.BindOutput(outName2, out2); e != nil {
+		t.Fatalf("Error binding %q: %s\n", outName2, e)
+	}
+
+	names, e := binding.GetBoundOutputNames()
+	if e != nil {
+		t.Fatalf("Error getting bound output names: %s\n", e)
+	}
+	want := []string{outName1, outName2}
+	if len(names) != len(want) {
+		t.Fatalf("Expected %d names, got %d: %v\n", len(want), len(names), names)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("names[%d] = %q, want %q\n", i, names[i], want[i])
+		}
 	}
 }
 
