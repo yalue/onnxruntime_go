@@ -2622,7 +2622,7 @@ func (b *IoBinding) GetBoundOutputNames() ([]string, error) {
 	toReturn := make([]string, int(resultCount))
 	prevEndOffset := uint64(0)
 	for i, stringLength := range sizesSlice {
-		toReturn[i] = string(charsSlice[prevEndOffset:stringLength])
+		toReturn[i] = string(charsSlice[prevEndOffset : prevEndOffset+uint64(stringLength)])
 		prevEndOffset += uint64(stringLength)
 	}
 
