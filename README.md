@@ -34,8 +34,8 @@ portion of this README (below) has a few more details.
 Note on onnxruntime Library Versions
 ------------------------------------
 
-At the time of writing, this library uses version 1.25.0 of the onnxruntime
-C API headers.  So, it will probably only work with version 1.25.0 of the
+At the time of writing, this library uses version 1.26.0 of the onnxruntime
+C API headers.  So, it will probably only work with version 1.26.0 of the
 onnxruntime shared libraries, as well.  If you need to use a different version,
 or if I get behind on updating this repository, updating or changing the
 onnxruntime version should be fairly easy:
@@ -59,7 +59,7 @@ download from the releases page in the
 for the release you want to use, and extract it. The header files are located
 in the "include" subdirectory, and the shared library will be located in the
 "lib" subdirectory. (On Linux systems, you'll need the version of the .so with
-the appended version numbers, e.g., `libonnxruntime.so.1.25.0`, and _not_ the
+the appended version numbers, e.g., `libonnxruntime.so.1.26.0`, and _not_ the
 `libonnxruntime.so`, which is just a symbolic link.)  The archive will contain
 several other files containing C++ headers, debug symbols, and so on, but you
 shouldn't need anything other than the single onnxruntime shared library and
