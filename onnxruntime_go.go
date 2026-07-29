@@ -1641,6 +1641,13 @@ func (o *CUDAProviderOptions) Destroy() error {
 // configured, then passed to SessionOptions.AppendExecutionProviderCUDA.)
 // The caller must call the Destroy() function on the returned struct when it's
 // no longer needed.
+//
+// WARNING: There is a known issue where the CUDA execution provider will
+// overwrite Go's default signal handlers. Users may need to back up and
+// re-install Go's signal handlers prior to initializing or using the CUDA
+// execution provider.
+// See https://github.com/yalue/onnxruntime_go/issues/140 for some discussion
+// of this issue.
 func NewCUDAProviderOptions() (*CUDAProviderOptions, error) {
 	if !IsInitialized() {
 		return nil, NotInitializedError
@@ -1907,6 +1914,13 @@ func (o *SessionOptions) SetMemPattern(isEnabled bool) error {
 // the session to use CUDA. Returns an error if your device (or onnxruntime
 // library) does not support CUDA. The CUDAProviderOptions struct can be
 // destroyed after this.
+//
+// WARNING: There is a known issue where the CUDA execution provider will
+// overwrite Go's default signal handlers. Users may need to back up and
+// re-install Go's signal handlers prior to initializing or using the CUDA
+// execution provider.
+// See https://github.com/yalue/onnxruntime_go/issues/140 for some discussion
+// of this issue.
 func (o *SessionOptions) AppendExecutionProviderCUDA(
 	cudaOptions *CUDAProviderOptions) error {
 	status := C.AppendExecutionProviderCUDAV2(o.o, cudaOptions.o)
