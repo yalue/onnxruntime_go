@@ -61,7 +61,7 @@ Adding New Files
  - Apart from testing data, try not to add new source files.
 
  - Do not add third-party code or headers.  The only exceptions for now are
-   `onnxruntime_c_api.h` and `onnxruntime_ep_c_api.h`.
+   `onnxruntime_c_api.h`, `onnxruntime_ep_c_api.h`, and `onnxruntime_error_code.h`.
 
  - No C++ at all. Developing Go-to-C wrappers is annoying enough as it is.
 
@@ -133,4 +133,3 @@ A Few Notes on Organization
    function from Go's standard library. This different behavior is locked
    behind build constraints in `setup_env.go` and `setup_env_windows.go`,
    respectively.
-

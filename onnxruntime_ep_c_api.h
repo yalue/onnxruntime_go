@@ -2116,10 +2116,10 @@ typedef enum OrtGraphCaptureNodeAssignmentPolicy {
  * \since Version 1.22.
  */
 struct OrtEp {
-  /** \brief The ONNX Runtime version the execution provider was compiled with.
+  /** \brief The ONNX Runtime API version the execution provider was compiled with.
    *
-   * Implementation should set to ORT_API_VERSION.
-   * ORT will use this to ensure it does not call functions that were not available when the library was compiled.
+   * Implementation should set this to ORT_API_VERSION.
+   * ORT uses this to avoid calling functions that were not available when the EP was compiled.
    *
    * \since Version 1.22.
    */
@@ -2551,6 +2551,85 @@ struct OrtEp {
    * \since Version 1.26.
    */
   ORT_API2_STATUS(GetAvailableResource, _In_ const OrtEp* this_ptr, _Out_ OrtResourceCount* available);
+
+  /** \brief Called by ORT when session initialization is complete.
+   *
+   * This provides an opportunity for execution providers to optionally synchronize and
+   * clean up temporary resources to reduce memory usage and ensure the first inference run is fast.
+   *
+   * \param[in] this_ptr The OrtEp instance.
+   *
+   * \note Implementation of this function is optional. If set to NULL, ORT assumes no
+   *       post-initialization work is needed and treats it as a no-op success.
+   *
+   * \snippet{doc} snippets.dox OrtStatus Return Value
+   *
+   * \since Version 1.27.
+   */
+  ORT_API2_STATUS(OnSessionInitializationEnd, _In_ OrtEp* this_ptr);
+
+  /** \brief Get the EP's default memory device.
+   *
+   * The EP's default memory device identifies the hardware the EP operates on. ORT uses it to:
+   * - Determine if data copies are needed between EPs (inserting memcpy nodes at EP boundaries)
+   * - Determine if the EP is CPU-based (which affects synchronization and data transfer decisions)
+   * - Bind execution streams to the correct device
+   *
+   * If the implementation allows an EP to be created with multiple EpDevices this should return the OrtMemoryDevice
+   * that ORT should consider as default for this EP instance.
+   *
+   * An OrtMemoryDevice is obtained from an OrtMemoryInfo via `OrtEpApi::MemoryInfo_GetMemoryDevice()`.
+   * Typically, an EP creates OrtMemoryInfo instances and registers them with its OrtEpDevice(s) via
+   * `OrtEpApi::EpDevice_AddAllocatorInfo()`. The OrtMemoryDevice returned here must correspond to an
+   * OrtMemoryInfo registered as an `OrtDeviceAllocator` entry (either `OrtDeviceMemoryType_DEFAULT` or
+   * `OrtDeviceMemoryType_HOST_ACCESSIBLE`). An OrtMemoryDevice from an `OrtReadOnlyAllocator` entry is
+   * not accepted as the EP's default/identity device.
+   *
+   * The returned pointer must remain valid for the lifetime of the OrtEp instance
+   * (typically by storing the parent OrtMemoryInfo as a member of the EP).
+   *
+   * If this function is not implemented (NULL), or if it sets `device` to NULL, ORT infers
+   * the default memory device from the first OrtEpDevice's `OrtDeviceAllocator` entry with
+   * `OrtDeviceMemoryType_DEFAULT` registered via `EpDevice_AddAllocatorInfo`. EPs created against
+   * multiple OrtEpDevices whose default memory devices differ should implement this function to
+   * disambiguate; otherwise the first OrtEpDevice's default memory device is used and the others
+   * are ignored for identity purposes. If no such allocator entry is registered, the EP defaults
+   * to a CPU memory device.
+   *
+   * \param[in] this_ptr The OrtEp instance.
+   * \param[out] device Set to the EP's default OrtMemoryDevice, or NULL to use the default behavior (described above).
+   *
+   * \snippet{doc} snippets.dox OrtStatus Return Value
+   *
+   * \note Implementation of this function is optional. If set to NULL (not implemented), ORT
+   *       infers the default memory device using the default behavior described above.
+   *
+   * \since Version 1.27.
+   */
+  ORT_API2_STATUS(GetDefaultMemoryDevice, _In_ const OrtEp* this_ptr,
+                  _Outptr_result_maybenull_ const OrtMemoryDevice** device);
+
+  /** \brief Release a previously captured graph and its associated resources.
+   *
+   * Called when the caller no longer needs the captured graph for the given annotation ID.
+   * This allows the EP to free buffers and other resources tied to this graph.
+   *
+   * \param[in] this_ptr The EP instance.
+   * \param[in] graph_annotation_id The annotation ID of the graph to release.
+   *
+   * \snippet{doc} snippets.dox OrtStatus Return Value
+   *
+   * \note Implementation of this function is optional. If set to NULL, ORT assumes
+   *       no captured graph release is needed and treats it as a no-op success.
+   *
+   * \note Thread safety: For EPs that support concurrent Run() calls, this method may be
+   *       called concurrently with Run(). The EP is responsible for ensuring thread safety
+   *       of its own state in that case. For non-concurrent EPs, the session serializes
+   *       calls via its internal mutex.
+   *
+   * \since Version 1.27.
+   */
+  ORT_API2_STATUS(ReleaseCapturedGraph, _In_ OrtEp* this_ptr, _In_ int graph_annotation_id);
 };
 
 /** \brief The function signature that ORT will call to create OrtEpFactory instances.
@@ -2965,6 +3044,57 @@ struct OrtEpFactory {
    */
   ORT_API2_STATUS(DeinitGraphicsInterop, _In_ OrtEpFactory* this_ptr,
                   _In_ const OrtEpDevice* ep_device);
+
+  /** \brief Select the best model variant candidate from metadata.
+   *
+   * Evaluates each candidate's metadata against the given hardware device and optional session options,
+   * and returns the index of the best match.
+   *
+   * Each candidate is an OrtKeyValuePairs representing one model variant. The KVP uses indexed keys
+   * so that the EP can inspect each model's metadata independently. A variant always has num_models >= 1.
+   *
+   * Required and optional keys:
+   *   - "num_models"                 — number of models in this variant (>= 1) (required)
+   *   - "<i>.ep_compatibility_info"  — compatibility string for model i (required per model)
+   *   - "<i>.role"                   — role/purpose of model i (e.g., "prefill", "decode") (optional)
+   *   - "<i>.future_meaningful_info" — additional EP-meaningful metadata for model i (optional)
+   *
+   * where <i> is a zero-based index (e.g., "0.ep_compatibility_info", "1.ep_compatibility_info").
+   *
+   * The implementer should loop from 0 to num_models - 1 and validate each "<i>.ep_compatibility_info" entry.
+   * An advanced implementation may additionally consider "role" or other metadata when ranking candidates.
+   *
+   * **Why this function exists:**
+   *
+   * The existing ValidateCompiledModelCompatibilityInfo() alone is not sufficient for some EPs to determine the best
+   * compatible model when there are multiple candidates. For example, an EP may support multiple compilation modes
+   * (e.g., "speed optimized" vs "memory optimized") that produce different compatibility strings. The EP can implement
+   * this function to evaluate the candidate metadata and select the best compatible variant based on its own criteria,
+   * the target device, and the session options.
+   *
+   * If all candidates are unsupported, this function succeeds and sets `selected_index` to SIZE_MAX.
+   *
+   * \note The implementer should validate each "<i>.ep_compatibility_info" in the candidate (e.g., by calling
+   * ValidateCompiledModelCompatibilityInfo for each one) before determining the best match.
+   *
+   * \param[in] this_ptr The OrtEpFactory instance.
+   * \param[in] device The target hardware device that the EP would run on. Must map to this EP.
+   * \param[in] candidates Array of OrtKeyValuePairs pointers (one per model variant).
+   * \param[in] num_candidates Number of candidates (i.e., number of model variants to evaluate).
+   * \param[in] session_options Optional session options to consider when selecting the best candidate.
+   *                            May be nullptr if no session-level preferences are relevant.
+   * \param[out] selected_index Selected candidate index, or SIZE_MAX if all unsupported.
+   *
+   * \snippet{doc} snippets.dox OrtStatus Return Value
+   *
+   * \since Version 1.28.
+   */
+  ORT_API2_STATUS(SelectBestModelCandidate, _In_ OrtEpFactory* this_ptr,
+                  _In_ const OrtHardwareDevice* device,
+                  _In_reads_(num_candidates) const OrtKeyValuePairs* const* candidates,
+                  _In_ size_t num_candidates,
+                  _In_opt_ const OrtSessionOptions* session_options,
+                  _Out_ size_t* selected_index);
 };
 
 #ifdef __cplusplus
