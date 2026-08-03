@@ -45,7 +45,7 @@ func platformCleanup() error {
 // function which should only be exported on apple onnxruntime dylib files.
 func setAppendCoreMLFunctionPointer(libraryHandle unsafe.Pointer) error {
 	// This function name must match the name in coreml_provider_factory.h,
-	// which is provided in the onnxruntime release's include/ directory on for
+	// which is provided in the onnxruntime release's include/ directory for
 	// Apple platforms.
 	fnName := "OrtSessionOptionsAppendExecutionProvider_CoreML"
 	cFunctionName := C.CString(fnName)
