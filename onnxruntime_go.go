@@ -830,6 +830,15 @@ const (
 	// Int4 types were introduced in ONNX 1.16. See https://onnx.ai/onnx/technical/int4.html
 	TensorElementDataTypeUint4 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT4 // maps to a pair of packed uint4 values (size == 1 byte)
 	TensorElementDataTypeInt4  = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT4  // maps to a pair of packed int4 values (size == 1 byte)
+	// See https://onnx.ai/onnx/technical/float4.html for information about
+	// the float4 types.
+	TensorElementDataTypeFloat4E2M1 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT4E2M1
+	// 4 int2 elements are packed into a single byte. See
+	// https://onnx.ai/onnx/technical/int2.html for more information.
+	TensorElementDataTypeUint2 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT2
+	TensorElementDataTypeInt2  = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT2
+	// Non-IEEE floating-point format, all values are powers of two.
+	TensorElementDataTypeFloat8E8M0 = C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E8M0
 )
 
 func (t TensorElementDataType) String() string {
@@ -880,6 +889,14 @@ func (t TensorElementDataType) String() string {
 		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT4"
 	case TensorElementDataTypeInt4:
 		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_INT4"
+	case TensorElementDataTypeFloat4E2M1:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT4E2M1"
+	case TensorElementDataTypeUint2:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT2"
+	case TensorElementDataTypeInt2:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_INT2"
+	case TensorElementDataTypeFloat8E8M0:
+		return "ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT8E8M0"
 	}
 	return fmt.Sprintf("Unknown tensor element data type: %d", int(t))
 }
