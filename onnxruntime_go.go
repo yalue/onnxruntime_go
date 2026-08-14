@@ -2187,6 +2187,25 @@ func (o *RunOptions) UnsetTerminate() error {
 	return nil
 }
 
+// AddRunConfigEntry sets a run configuration key to the given value. See the
+// onnxruntime_run_options_config_keys.h file in the onnxruntime sources for
+// documentation on valid keys and values. If the key was already set, this
+// will overwrite its old setting with the given value.
+func (o *RunOptions) AddRunConfigEntry(key, value string) error {
+	if o == nil || o.o == nil {
+		return fmt.Errorf("The RunOptions are not initialized")
+	}
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	cValue := C.CString(value)
+	defer C.free(unsafe.Pointer(cValue))
+	status := C.AddRunConfigEntry(o.o, cKey, cValue)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // A wrapper around the OrtModelMetadata C struct. Must be freed by calling
 // Destroy() on it when it's no longer needed.
 type ModelMetadata struct {
