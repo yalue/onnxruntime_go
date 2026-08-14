@@ -2757,6 +2757,50 @@ func TestCancelWithRunOptions_DynamicAdvancedSession(t *testing.T) {
 	}
 }
 
+func TestRunOptionsConfig(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	inputData := []int32{12, 21}
+	input, e := NewTensor(NewShape(1, 2), inputData)
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[int32](t, NewShape(1))
+	defer output.Destroy()
+
+	filePath := "test_data/example ż 大 김.onnx"
+	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"},
+		[]Value{input}, []Value{output}, nil)
+	if e != nil {
+		t.Fatalf("Failed creating session for %s: %s\n", filePath, e)
+	}
+	defer session.Destroy()
+
+	ro, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer ro.Destroy()
+
+	// Shrinking the CPU arena is valid on any platform, since the CPU arena is
+	// enabled by default.
+	e = ro.AddRunConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0")
+	if e != nil {
+		t.Fatalf("Error adding run config entry: %s\n", e)
+	}
+	e = session.RunWithOptions(ro)
+	if e != nil {
+		t.Fatalf("Error running with a run config entry set: %s\n", e)
+	}
+	expected := inputData[0] + inputData[1]
+	result := output.GetData()[0]
+	if result != expected {
+		t.Errorf("Incorrect result. Expected %d, got %d.\n", expected, result)
+	}
+}
+
 func TestSharedAllocator(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)
