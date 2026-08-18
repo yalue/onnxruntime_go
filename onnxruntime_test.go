@@ -2786,9 +2786,16 @@ func TestRunOptionsConfig(t *testing.T) {
 
 	// Shrinking the CPU arena is valid on any platform, since the CPU arena is
 	// enabled by default.
-	e = ro.AddRunConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0")
+	expectedEntry := "cpu:0"
+	configKey := "memory.enable_memory_arena_shrinkage"
+	e = ro.AddRunConfigEntry(configKey, expectedEntry)
 	if e != nil {
 		t.Fatalf("Error adding run config entry: %s\n", e)
+	}
+	entry, e := ro.GetRunConfigEntry(configKey)
+	if entry != expectedEntry {
+		t.Errorf("Did not get expected result for key %s: Expected %s, "+
+			"got %s\n", configKey, expectedEntry, entry)
 	}
 	e = session.RunWithOptions(ro)
 	if e != nil {
@@ -2799,6 +2806,19 @@ func TestRunOptionsConfig(t *testing.T) {
 	if result != expected {
 		t.Errorf("Incorrect result. Expected %d, got %d.\n", expected, result)
 	}
+
+	e = ro.AddRunConfigEntry("", "haha")
+	if e == nil {
+		t.Fatalf("Didn't get expected error when adding an option with an " +
+			"empty key.\n")
+	}
+	t.Logf("Got expected error when adding a bad RunConfigEntry: %s\n", e)
+	entry, e = ro.GetRunConfigEntry("WhateverOptionLOL")
+	if e == nil {
+		t.Fatalf("Didn't get expected error when getting a RunConfigEntry " +
+			"with an invalid key.\n")
+	}
+	t.Logf("Got expected error when getting a bad RunConfigEntry: %s\n", e)
 }
 
 func TestSharedAllocator(t *testing.T) {

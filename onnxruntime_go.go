@@ -2155,9 +2155,6 @@ func NewRunOptions() (*RunOptions, error) {
 
 // Destroy releases the underlying OrtRunOptions.
 func (o *RunOptions) Destroy() error {
-	if o == nil || o.o == nil {
-		return fmt.Errorf("The RunOptions are not initialized")
-	}
 	C.ReleaseRunOptions(o.o)
 	o.o = nil
 	return nil
@@ -2165,9 +2162,6 @@ func (o *RunOptions) Destroy() error {
 
 // Terminate sets the terminate flag so any ongoing Run using this RunOptions fails quickly.
 func (o *RunOptions) Terminate() error {
-	if o == nil || o.o == nil {
-		return fmt.Errorf("The RunOptions are not initialized")
-	}
 	status := C.RunOptionsSetTerminate(o.o)
 	if status != nil {
 		return statusToError(status)
@@ -2177,9 +2171,6 @@ func (o *RunOptions) Terminate() error {
 
 // UnsetTerminate clears the terminate flag so this RunOptions can be reused.
 func (o *RunOptions) UnsetTerminate() error {
-	if o == nil || o.o == nil {
-		return fmt.Errorf("The RunOptions are not initialized")
-	}
 	status := C.RunOptionsUnsetTerminate(o.o)
 	if status != nil {
 		return statusToError(status)
@@ -2192,9 +2183,6 @@ func (o *RunOptions) UnsetTerminate() error {
 // documentation on valid keys and values. If the key was already set, this
 // will overwrite its old setting with the given value.
 func (o *RunOptions) AddRunConfigEntry(key, value string) error {
-	if o == nil || o.o == nil {
-		return fmt.Errorf("The RunOptions are not initialized")
-	}
 	cKey := C.CString(key)
 	defer C.free(unsafe.Pointer(cKey))
 	cValue := C.CString(value)
@@ -2204,6 +2192,19 @@ func (o *RunOptions) AddRunConfigEntry(key, value string) error {
 		return statusToError(status)
 	}
 	return nil
+}
+
+// The counterpart to AddRunConfigEntry,
+func (o *RunOptions) GetRunConfigEntry(key string) (string, error) {
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	cValue := C.GetRunConfigEntry(o.o, cKey)
+	if cValue == nil {
+		return "", fmt.Errorf("GetRunConfigEntry returned NULL for key \"%s\"",
+			key)
+	}
+	nonConstPtr := (*C.char)(unsafe.Pointer(cValue))
+	return C.GoString(nonConstPtr), nil
 }
 
 // A wrapper around the OrtModelMetadata C struct. Must be freed by calling

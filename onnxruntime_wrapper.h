@@ -260,6 +260,8 @@ OrtStatus *RunOptionsSetTerminate(OrtRunOptions *o);
 OrtStatus *RunOptionsUnsetTerminate(OrtRunOptions *o);
 // Wraps ort_api->AddRunConfigEntry
 OrtStatus *AddRunConfigEntry(OrtRunOptions *o, char *key, char *value);
+// Wraps ort_api->GetRunConfigEntry
+const char *GetRunConfigEntry(OrtRunOptions *o, char *key);
 
 // Wraps ort_api->RunWithBinding.
 OrtStatus *RunSessionWithBinding(OrtSession *session, OrtIoBinding *b);
