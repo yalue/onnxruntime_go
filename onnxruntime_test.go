@@ -2821,6 +2821,105 @@ func TestRunOptionsConfig(t *testing.T) {
 	t.Logf("Got expected error when getting a bad RunConfigEntry: %s\n", e)
 }
 
+func TestLoraAdapter(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	input, e := NewTensor(NewShape(1, 4), []float32{1, 2, 3, 4})
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[float32](t, NewShape(1, 4))
+	defer output.Destroy()
+
+	filePath := "test_data/example_lora.onnx"
+	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"},
+		[]Value{input}, []Value{output}, nil)
+	if e != nil {
+		t.Fatalf("Failed creating session for %s: %s\n", filePath, e)
+	}
+	defer session.Destroy()
+
+	// Without an adapter, the network's LoRA parameters keep their zero-size
+	// defaults and contribute nothing to the output.
+	e = session.Run()
+	if e != nil {
+		t.Fatalf("Error running the network without an adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{90, 100, 110, 120}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result without an adapter: %s\n", e)
+	}
+
+	adapterPath := "test_data/example_lora.onnx_adapter"
+	adapter, e := NewLoraAdapter(adapterPath)
+	if e != nil {
+		t.Fatalf("Failed loading LoRA adapter %s: %s\n", adapterPath, e)
+	}
+	defer adapter.Destroy()
+
+	ro, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer ro.Destroy()
+	e = ro.AddActiveLoraAdapter(adapter)
+	if e != nil {
+		t.Fatalf("Error activating the LoRA adapter: %s\n", e)
+	}
+	e = session.RunWithOptions(ro)
+	if e != nil {
+		t.Fatalf("Error running with an active LoRA adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{440, 500, 560, 620}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result with an active adapter: %s\n", e)
+	}
+
+	// Loading the adapter from a buffer must behave the same as loading it
+	// from a file.
+	adapterData, e := os.ReadFile(adapterPath)
+	if e != nil {
+		t.Fatalf("Error reading %s: %s\n", adapterPath, e)
+	}
+	dataAdapter, e := NewLoraAdapterWithData(adapterData)
+	if e != nil {
+		t.Fatalf("Failed loading LoRA adapter from a buffer: %s\n", e)
+	}
+	defer dataAdapter.Destroy()
+	dataRO, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer dataRO.Destroy()
+	e = dataRO.AddActiveLoraAdapter(dataAdapter)
+	if e != nil {
+		t.Fatalf("Error activating the buffer-loaded adapter: %s\n", e)
+	}
+	e = session.RunWithOptions(dataRO)
+	if e != nil {
+		t.Fatalf("Error running with the buffer-loaded adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{440, 500, 560, 620}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result with the buffer-loaded adapter: %s\n", e)
+	}
+
+	_, e = NewLoraAdapter("test_data/nonexistent.onnx_adapter")
+	if e == nil {
+		t.Fatalf("Didn't get expected error when loading a nonexistent " +
+			"adapter file.\n")
+	}
+	t.Logf("Got expected error when loading a nonexistent adapter: %s\n", e)
+	_, e = NewLoraAdapterWithData([]byte{})
+	if e == nil {
+		t.Fatalf("Didn't get expected error when loading an adapter from " +
+			"an empty buffer.\n")
+	}
+	t.Logf("Got expected error when loading an empty adapter buffer: %s\n", e)
+}
+
 func TestSharedAllocator(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)

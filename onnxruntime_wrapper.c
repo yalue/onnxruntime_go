@@ -393,6 +393,24 @@ const char *GetRunConfigEntry(OrtRunOptions *o, char *key) {
   return ort_api->GetRunConfigEntry(o, key);
 }
 
+OrtStatus *CreateLoraAdapter(char *path, OrtLoraAdapter **out) {
+  return ort_api->CreateLoraAdapter((const ORTCHAR_T*) path, NULL, out);
+}
+
+OrtStatus *CreateLoraAdapterFromArray(void *bytes, size_t num_bytes,
+  OrtLoraAdapter **out) {
+  return ort_api->CreateLoraAdapterFromArray(bytes, num_bytes, NULL, out);
+}
+
+void ReleaseLoraAdapter(OrtLoraAdapter *a) {
+  ort_api->ReleaseLoraAdapter(a);
+}
+
+OrtStatus *RunOptionsAddActiveLoraAdapter(OrtRunOptions *o,
+  OrtLoraAdapter *a) {
+  return ort_api->RunOptionsAddActiveLoraAdapter(o, a);
+}
+
 OrtStatus *RunSessionWithBinding(OrtSession *session, OrtIoBinding *b) {
   return ort_api->RunWithBinding(session, NULL, b);
 }
