@@ -2207,6 +2207,74 @@ func (o *RunOptions) GetRunConfigEntry(key string) (string, error) {
 	return C.GoString(nonConstPtr), nil
 }
 
+// A wrapper around the OrtLoraAdapter C struct, holding a set of LoRA
+// parameters that can be activated on a RunOptions instance. Must be freed by
+// calling Destroy() on it when it's no longer needed.
+type LoraAdapter struct {
+	l *C.OrtLoraAdapter
+}
+
+// NewLoraAdapter loads the LoRA adapter file (in onnxruntime's .onnx_adapter
+// format) at the given path. The adapter's parameters stay on the CPU, and are
+// only copied to a device if the model requires it at inference time. The
+// caller must call Destroy() on the returned LoraAdapter when it's no longer
+// needed.
+func NewLoraAdapter(adapterFilePath string) (*LoraAdapter, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	cPath, e := createOrtCharString(adapterFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error encoding adapter file path: %w", e)
+	}
+	defer C.free(unsafe.Pointer(cPath))
+	var l *C.OrtLoraAdapter
+	status := C.CreateLoraAdapter(cPath, &l)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &LoraAdapter{l: l}, nil
+}
+
+// The same as NewLoraAdapter, but takes a slice of bytes containing the
+// .onnx_adapter data rather than a file path.
+func NewLoraAdapterWithData(adapterData []byte) (*LoraAdapter, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	if len(adapterData) == 0 {
+		return nil, fmt.Errorf("Missing adapter data")
+	}
+	var l *C.OrtLoraAdapter
+	status := C.CreateLoraAdapterFromArray(unsafe.Pointer(&(adapterData[0])),
+		C.size_t(len(adapterData)), &l)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &LoraAdapter{l: l}, nil
+}
+
+// Destroy releases the underlying OrtLoraAdapter. Don't destroy a LoraAdapter
+// while it's still active on a RunOptions instance that may still be used.
+func (l *LoraAdapter) Destroy() error {
+	C.ReleaseLoraAdapter(l.l)
+	l.l = nil
+	return nil
+}
+
+// AddActiveLoraAdapter adds the given LoRA adapter to the list of adapters
+// that are active during any Run using this RunOptions instance. More than one
+// adapter can be active at the same time, but parameters belonging to
+// different active adapters must not overlap. This setting does not affect
+// RunWithBinding.
+func (o *RunOptions) AddActiveLoraAdapter(adapter *LoraAdapter) error {
+	status := C.RunOptionsAddActiveLoraAdapter(o.o, adapter.l)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
 // A wrapper around the OrtModelMetadata C struct. Must be freed by calling
 // Destroy() on it when it's no longer needed.
 type ModelMetadata struct {
