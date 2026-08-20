@@ -2920,6 +2920,172 @@ func TestLoraAdapter(t *testing.T) {
 	t.Logf("Got expected error when loading an empty adapter buffer: %s\n", e)
 }
 
+func TestLoraAdapterWithNilAllocator(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	input, e := NewTensor(NewShape(1, 4), []float32{1, 2, 3, 4})
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[float32](t, NewShape(1, 4))
+	defer output.Destroy()
+
+	filePath := "test_data/example_lora.onnx"
+	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"},
+		[]Value{input}, []Value{output}, nil)
+	if e != nil {
+		t.Fatalf("Failed creating session for %s: %s\n", filePath, e)
+	}
+	defer session.Destroy()
+
+	// A nil allocator must behave exactly like NewLoraAdapter and
+	// NewLoraAdapterWithData.
+	adapterPath := "test_data/example_lora.onnx_adapter"
+	adapter, e := NewLoraAdapterWithAllocator(adapterPath, nil)
+	if e != nil {
+		t.Fatalf("Failed loading LoRA adapter %s: %s\n", adapterPath, e)
+	}
+	defer adapter.Destroy()
+	ro, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer ro.Destroy()
+	e = ro.AddActiveLoraAdapter(adapter)
+	if e != nil {
+		t.Fatalf("Error activating the LoRA adapter: %s\n", e)
+	}
+	e = session.RunWithOptions(ro)
+	if e != nil {
+		t.Fatalf("Error running with an active LoRA adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{440, 500, 560, 620}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result with a nil-allocator adapter: %s\n", e)
+	}
+
+	adapterData, e := os.ReadFile(adapterPath)
+	if e != nil {
+		t.Fatalf("Error reading %s: %s\n", adapterPath, e)
+	}
+	dataAdapter, e := NewLoraAdapterWithDataAndAllocator(adapterData, nil)
+	if e != nil {
+		t.Fatalf("Failed loading LoRA adapter from a buffer: %s\n", e)
+	}
+	defer dataAdapter.Destroy()
+	dataRO, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer dataRO.Destroy()
+	e = dataRO.AddActiveLoraAdapter(dataAdapter)
+	if e != nil {
+		t.Fatalf("Error activating the buffer-loaded adapter: %s\n", e)
+	}
+	e = session.RunWithOptions(dataRO)
+	if e != nil {
+		t.Fatalf("Error running with the buffer-loaded adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{440, 500, 560, 620}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result with the buffer-loaded adapter: %s\n", e)
+	}
+}
+
+func TestLoraAdapterOnCUDADevice(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getCUDASessionOptions(t)
+	defer sessionOptions.Destroy()
+
+	input, e := NewTensor(NewShape(1, 4), []float32{1, 2, 3, 4})
+	if e != nil {
+		t.Fatalf("Error creating input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output := newTestTensor[float32](t, NewShape(1, 4))
+	defer output.Destroy()
+
+	filePath := "test_data/example_lora.onnx"
+	session, e := NewAdvancedSession(filePath, []string{"in"}, []string{"out"},
+		[]Value{input}, []Value{output}, sessionOptions)
+	if e != nil {
+		t.Fatalf("Failed creating session for %s: %s\n", filePath, e)
+	}
+	defer session.Destroy()
+
+	memInfo, e := NewDeviceMemoryInfo("Cuda", 0)
+	if e != nil {
+		t.Fatalf("Error creating CUDA memory info: %s\n", e)
+	}
+	defer ReleaseMemoryInfo(memInfo)
+	allocator, e := session.CreateAllocator(memInfo)
+	if e != nil {
+		t.Fatalf("Error creating a CUDA allocator: %s\n", e)
+	}
+	defer ReleaseAllocator(allocator)
+
+	// With a device allocator, the adapter's parameters are copied to the
+	// device once at load time, and each Run must produce the same results as
+	// the CPU-resident adapters covered by TestLoraAdapter.
+	adapterPath := "test_data/example_lora.onnx_adapter"
+	adapter, e := NewLoraAdapterWithAllocator(adapterPath, allocator)
+	if e != nil {
+		t.Fatalf("Failed loading LoRA adapter %s onto the device: %s\n",
+			adapterPath, e)
+	}
+	defer adapter.Destroy()
+	ro, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer ro.Destroy()
+	e = ro.AddActiveLoraAdapter(adapter)
+	if e != nil {
+		t.Fatalf("Error activating the device-resident adapter: %s\n", e)
+	}
+	e = session.RunWithOptions(ro)
+	if e != nil {
+		t.Fatalf("Error running with the device-resident adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{440, 500, 560, 620}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result with the device-resident adapter: %s\n", e)
+	}
+
+	adapterData, e := os.ReadFile(adapterPath)
+	if e != nil {
+		t.Fatalf("Error reading %s: %s\n", adapterPath, e)
+	}
+	dataAdapter, e := NewLoraAdapterWithDataAndAllocator(adapterData,
+		allocator)
+	if e != nil {
+		t.Fatalf("Failed loading a device-resident adapter from a buffer: "+
+			"%s\n", e)
+	}
+	defer dataAdapter.Destroy()
+	dataRO, e := NewRunOptions()
+	if e != nil {
+		t.Fatalf("Error creating RunOptions: %s\n", e)
+	}
+	defer dataRO.Destroy()
+	e = dataRO.AddActiveLoraAdapter(dataAdapter)
+	if e != nil {
+		t.Fatalf("Error activating the buffer-loaded adapter: %s\n", e)
+	}
+	e = session.RunWithOptions(dataRO)
+	if e != nil {
+		t.Fatalf("Error running with the buffer-loaded adapter: %s\n", e)
+	}
+	e = allFloatsEqual([]float32{440, 500, 560, 620}, output.GetData())
+	if e != nil {
+		t.Errorf("Incorrect result with the buffer-loaded device-resident "+
+			"adapter: %s\n", e)
+	}
+}
+
 func TestSharedAllocator(t *testing.T) {
 	InitializeRuntime(t)
 	defer CleanupRuntime(t)

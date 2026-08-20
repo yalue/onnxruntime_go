@@ -65,6 +65,11 @@ void ReleaseOrtEnv(OrtEnv *env);
 // Wraps ort_api->CreateCpuMemoryInfo with some basic, default settings.
 OrtStatus *CreateOrtMemoryInfo(OrtMemoryInfo **mem_info);
 
+// Wraps ort_api->CreateMemoryInfo with some basic, default settings, for
+// referring to a non-CPU device's memory such as "Cuda".
+OrtStatus *CreateOrtDeviceMemoryInfo(char *name, int device_id,
+  OrtMemoryInfo **mem_info);
+
 // Wraps ort_api->ReleaseMemoryInfo
 void ReleaseOrtMemoryInfo(OrtMemoryInfo *info);
 
@@ -227,6 +232,13 @@ OrtStatus *RegisterAllocator(OrtEnv *env, OrtAllocator *allocator);
 // Wraps ort_api->UnregisterAllocator
 OrtStatus *UnregisterAllocator(OrtEnv *env, const OrtMemoryInfo *mem_info);
 
+// Wraps ort_api->CreateAllocator
+OrtStatus *CreateAllocator(OrtSession *session,
+  const OrtMemoryInfo *mem_info, OrtAllocator **out);
+
+// Wraps ort_api->ReleaseAllocator
+void ReleaseAllocator(OrtAllocator *allocator);
+
 // Creates an ORT session using the given model. The given options pointer may
 // be NULL; if it is, then we'll use default options.
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
@@ -264,14 +276,16 @@ OrtStatus *AddRunConfigEntry(OrtRunOptions *o, char *key, char *value);
 const char *GetRunConfigEntry(OrtRunOptions *o, char *key);
 
 // LoraAdapter helpers
-// Wraps ort_api->CreateLoraAdapter, passing a NULL allocator so the adapter's
-// parameters stay on the CPU until a run requires them on a device.
+// Wraps ort_api->CreateLoraAdapter. The allocator may be NULL, in which case
+// the adapter's parameters stay on the CPU until a run requires them on a
+// device.
 // NOTE: takes an ORTCHAR_T*.
-OrtStatus *CreateLoraAdapter(char *path, OrtLoraAdapter **out);
-// Wraps ort_api->CreateLoraAdapterFromArray, passing a NULL allocator like
+OrtStatus *CreateLoraAdapter(char *path, OrtAllocator *allocator,
+  OrtLoraAdapter **out);
+// Wraps ort_api->CreateLoraAdapterFromArray. The allocator may be NULL like
 // CreateLoraAdapter.
 OrtStatus *CreateLoraAdapterFromArray(void *bytes, size_t num_bytes,
-  OrtLoraAdapter **out);
+  OrtAllocator *allocator, OrtLoraAdapter **out);
 // Wraps ort_api->ReleaseLoraAdapter
 void ReleaseLoraAdapter(OrtLoraAdapter *a);
 // Wraps ort_api->RunOptionsAddActiveLoraAdapter

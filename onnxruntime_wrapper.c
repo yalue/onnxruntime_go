@@ -79,6 +79,12 @@ OrtStatus *CreateOrtMemoryInfo(OrtMemoryInfo **mem_info) {
     mem_info);
 }
 
+OrtStatus *CreateOrtDeviceMemoryInfo(char *name, int device_id,
+  OrtMemoryInfo **mem_info) {
+  return ort_api->CreateMemoryInfo(name, OrtDeviceAllocator, device_id,
+    OrtMemTypeDefault, mem_info);
+}
+
 void ReleaseOrtMemoryInfo(OrtMemoryInfo *info) {
   ort_api->ReleaseMemoryInfo(info);
 }
@@ -312,6 +318,15 @@ OrtStatus *UnregisterAllocator(OrtEnv *env, const OrtMemoryInfo *mem_info) {
   return ort_api->UnregisterAllocator(env, mem_info);
 }
 
+OrtStatus *CreateAllocator(OrtSession *session,
+  const OrtMemoryInfo *mem_info, OrtAllocator **out) {
+  return ort_api->CreateAllocator(session, mem_info, out);
+}
+
+void ReleaseAllocator(OrtAllocator *allocator) {
+  ort_api->ReleaseAllocator(allocator);
+}
+
 OrtStatus *CreateSession(void *model_data, size_t model_data_length,
     OrtEnv *env, OrtSession **out, OrtSessionOptions *options) {
   OrtStatus *status = NULL;
@@ -393,13 +408,15 @@ const char *GetRunConfigEntry(OrtRunOptions *o, char *key) {
   return ort_api->GetRunConfigEntry(o, key);
 }
 
-OrtStatus *CreateLoraAdapter(char *path, OrtLoraAdapter **out) {
-  return ort_api->CreateLoraAdapter((const ORTCHAR_T*) path, NULL, out);
+OrtStatus *CreateLoraAdapter(char *path, OrtAllocator *allocator,
+  OrtLoraAdapter **out) {
+  return ort_api->CreateLoraAdapter((const ORTCHAR_T*) path, allocator, out);
 }
 
 OrtStatus *CreateLoraAdapterFromArray(void *bytes, size_t num_bytes,
-  OrtLoraAdapter **out) {
-  return ort_api->CreateLoraAdapterFromArray(bytes, num_bytes, NULL, out);
+  OrtAllocator *allocator, OrtLoraAdapter **out) {
+  return ort_api->CreateLoraAdapterFromArray(bytes, num_bytes, allocator,
+    out);
 }
 
 void ReleaseLoraAdapter(OrtLoraAdapter *a) {
