@@ -2784,6 +2784,13 @@ func (b *IoBinding) GetBoundOutputValues() ([]Value, error) {
 	toReturn := make([]Value, int(numValues))
 	for i := range valuesSlice {
 		toReturn[i], e = createGoValueFromOrtValue(valuesSlice[i])
+		// createGoValueFromOrtValue always takes ownership of the OrtValue:
+		// it releases it on failure, and otherwise it is either released
+		// during conversion or when the corresponding Go Value is
+		// Destroy()'d. Make it nil right away so the cleanup below can't
+		// double-release it, whether the error occurred at this index or a
+		// later one.
+		valuesSlice[i] = nil
 		if e != nil {
 			// Upon error, we have a lot to clean up:
 			//  All OrtValues from C that haven't been converted...
@@ -2806,11 +2813,6 @@ func (b *IoBinding) GetBoundOutputValues() ([]Value, error) {
 			return nil, fmt.Errorf("Error converting output index %d to "+
 				"a Go-managed Value: %w", i, e)
 		}
-		// createGoValueFromOrtValue will automatically destroy the OrtValue,
-		// or it will be destroyed when the corresponding Go Value is
-		// Destroy()'d. Either way, we don't want to double-free it if we
-		// attempt to clean up, so make it nil to indicate we're done with it.
-		valuesSlice[i] = nil
 	}
 
 	// If we're here, everything was successfully converted to a Go value,
@@ -2844,6 +2846,303 @@ func (b *IoBinding) ClearBoundOutputs() {
 		return
 	}
 	C.ClearBoundOutputs(b.o)
+}
+
+// Binds the named output to a memory location rather than to a preallocated
+// value, letting onnxruntime allocate the output there (for example on a CUDA
+// device) with whatever shape the run produces. The bound outputs can be
+// retrieved after RunWithBinding using GetBoundOutputValues; note that
+// GetBoundOutputValues returns an error for outputs residing in non-CPU
+// memory, which must instead be copied to a CPU-backed tensor using
+// CopyTensors.
+func (b *IoBinding) BindOutputToDevice(name string, m *MemoryInfo) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	status := C.BindOutputToDevice(b.o, cName, m.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Blocks until any asynchronous work producing the bound inputs has
+// completed. Only meaningful for execution providers with asynchronous
+// streams, such as CUDA; a no-op for the others.
+func (b *IoBinding) SynchronizeBoundInputs() error {
+	status := C.SynchronizeBoundInputs(b.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Blocks until any asynchronous work producing the bound outputs has
+// completed. Only meaningful for execution providers with asynchronous
+// streams, such as CUDA; a no-op for the others.
+func (b *IoBinding) SynchronizeBoundOutputs() error {
+	status := C.SynchronizeBoundOutputs(b.o)
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Wraps the C OrtAllocatorType enum, used when creating a MemoryInfo.
+type AllocatorType int
+
+const (
+	AllocatorTypeInvalid AllocatorType = C.OrtInvalidAllocator
+	AllocatorTypeDevice  AllocatorType = C.OrtDeviceAllocator
+	AllocatorTypeArena   AllocatorType = C.OrtArenaAllocator
+)
+
+// Wraps the C OrtMemType enum, used when creating a MemoryInfo.
+type MemType int
+
+const (
+	MemTypeCPUInput  MemType = C.OrtMemTypeCPUInput
+	MemTypeCPUOutput MemType = C.OrtMemTypeCPUOutput
+	MemTypeCPU       MemType = C.OrtMemTypeCPU
+	MemTypeDefault   MemType = C.OrtMemTypeDefault
+)
+
+// A MemoryInfo describes a memory location tensors can live in, such as the
+// memory of a CUDA device. (The library's default tensors all live in the
+// implicit CPU location; this type exists for referring to the others.) It
+// must be freed using Destroy when no longer needed.
+type MemoryInfo struct {
+	o *C.OrtMemoryInfo
+}
+
+// Creates a MemoryInfo referring to the named memory location; for example,
+// NewMemoryInfo("Cuda", AllocatorTypeDevice, 0, MemTypeDefault) refers to the
+// memory of the first CUDA device. The known location names are defined by
+// onnxruntime and its execution providers. The returned MemoryInfo must be
+// freed using Destroy when no longer needed.
+func NewMemoryInfo(name string, allocatorType AllocatorType, deviceID int,
+	memType MemType) (*MemoryInfo, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var o *C.OrtMemoryInfo
+	status := C.CreateOrtCustomMemoryInfo(cName, C.int(allocatorType),
+		C.int(deviceID), C.int(memType), &o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &MemoryInfo{
+		o: o,
+	}, nil
+}
+
+// Returns the name of the memory location this MemoryInfo refers to, e.g.
+// "Cpu" or "Cuda".
+func (m *MemoryInfo) Name() (string, error) {
+	var name *C.char
+	status := C.GetMemoryInfoName(m.o, &name)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return C.GoString(name), nil
+}
+
+// Frees the resources associated with the MemoryInfo.
+func (m *MemoryInfo) Destroy() error {
+	if m.o != nil {
+		C.ReleaseOrtMemoryInfo(m.o)
+		m.o = nil
+	}
+	return nil
+}
+
+// An Allocator allocates tensors in the memory location described by the
+// MemoryInfo it was created with - including non-CPU locations such as CUDA
+// device memory. It wraps a session's internal allocator and becomes invalid
+// when that session is destroyed, so Destroy the Allocator, and any
+// DeviceTensors allocated from it, before destroying the session.
+type Allocator struct {
+	o *C.OrtAllocator
+}
+
+// Creates an Allocator for this session, allocating in the location described
+// by the given MemoryInfo. The MemoryInfo is no longer needed after this
+// function returns. The returned Allocator must be freed using Destroy before
+// the session it came from.
+func (s *DynamicAdvancedSession) CreateAllocator(m *MemoryInfo) (*Allocator,
+	error) {
+	var o *C.OrtAllocator
+	status := C.CreateOrtAllocator(s.s.ortSession, m.o, &o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &Allocator{
+		o: o,
+	}, nil
+}
+
+// Frees the resources associated with the Allocator. Tensors allocated from
+// it must be destroyed first.
+func (a *Allocator) Destroy() error {
+	if a.o != nil {
+		C.ReleaseOrtAllocator(a.o)
+		a.o = nil
+	}
+	return nil
+}
+
+// A DeviceTensor is a tensor whose data lives wherever its Allocator
+// allocates - typically a non-CPU device such as a CUDA GPU. Unlike Tensor,
+// it has no Go-accessible data slice: use CopyTensors to move data between it
+// and CPU-backed tensors. It satisfies the Value interface, so it can be
+// passed to IoBinding's BindInput and BindOutput - which is the combination
+// CUDA graph capture requires: inputs and outputs at stable device addresses
+// across runs. It must be destroyed using Destroy when no longer needed,
+// before the Allocator it came from.
+type DeviceTensor struct {
+	shape    Shape
+	dataType C.ONNXTensorElementDataType
+	ortValue *C.OrtValue
+}
+
+// Creates an uninitialized tensor with the given shape and element type,
+// allocated by the given Allocator. The shape is copied and no longer needed
+// after this function returns.
+func NewDeviceTensor(a *Allocator, s Shape,
+	dataType TensorElementDataType) (*DeviceTensor, error) {
+	e := s.Validate()
+	if e != nil {
+		return nil, fmt.Errorf("Invalid tensor shape: %w", e)
+	}
+	var ortValue *C.OrtValue
+	status := C.CreateOrtTensorWithAllocator(a.o,
+		(*C.int64_t)(unsafe.Pointer(&s[0])), C.int64_t(len(s)),
+		C.ONNXTensorElementDataType(dataType), &ortValue)
+	if status != nil {
+		return nil, fmt.Errorf("ORT API error creating tensor: %w",
+			statusToError(status))
+	}
+	return &DeviceTensor{
+		shape:    s.Clone(),
+		dataType: C.ONNXTensorElementDataType(dataType),
+		ortValue: ortValue,
+	}, nil
+}
+
+// Cleans up and frees the memory associated with this tensor. Must be called
+// before destroying the Allocator the tensor came from.
+func (t *DeviceTensor) Destroy() error {
+	C.ReleaseOrtValue(t.ortValue)
+	t.ortValue = nil
+	t.shape = nil
+	return nil
+}
+
+// Returns the value from the ONNXTensorElementDataType C enum corresponding
+// to the type of the tensor's elements.
+func (t *DeviceTensor) DataType() C.ONNXTensorElementDataType {
+	return t.dataType
+}
+
+// Returns the shape of the tensor. The returned shape is only a copy;
+// modifying it does not change the shape of the underlying tensor.
+func (t *DeviceTensor) GetShape() Shape {
+	return t.shape.Clone()
+}
+
+func (t *DeviceTensor) GetInternals() *ValueInternalData {
+	return &ValueInternalData{
+		ortValue: t.ortValue,
+	}
+}
+
+// A no-op for DeviceTensors: the data lives in device memory, which can't be
+// written from the host. To zero a DeviceTensor, use CopyTensors to copy a
+// zeroed CPU-backed tensor into it.
+func (t *DeviceTensor) ZeroContents() {
+}
+
+// Always returns ONNXTypeTensor.
+func (t *DeviceTensor) GetONNXType() ONNXType {
+	return ONNXTypeTensor
+}
+
+// Copies the contents of each src[i] into the corresponding dst[i]. All
+// sources must reside in one memory location and all destinations in another
+// (either of which may be the CPU or a device), and each pair must match in
+// shape and element type. Transfers involving a device are implemented by an
+// execution provider registered in the runtime environment; for example,
+// copying to or from CUDA device memory requires the CUDA provider library
+// to have been registered using RegisterExecutionProviderLibrary. This is the
+// way to move data into and out of DeviceTensors, which have no Go-accessible
+// data slice.
+func CopyTensors(src, dst []Value) error {
+	if !IsInitialized() {
+		return NotInitializedError
+	}
+	if len(src) != len(dst) {
+		return fmt.Errorf("Got %d source tensors, but %d destinations",
+			len(src), len(dst))
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	srcValues := make([]*C.OrtValue, len(src))
+	dstValues := make([]*C.OrtValue, len(dst))
+	for i := range src {
+		srcValues[i] = src[i].GetInternals().ortValue
+		dstValues[i] = dst[i].GetInternals().ortValue
+	}
+
+	// onnxruntime's CopyTensors delegates to the execution providers'
+	// data-transfer implementations, and no provider implements the copy
+	// between two CPU tensors - so that combination is handled here instead,
+	// which also lets code written against this function run unchanged on
+	// CPU-only systems.
+	srcLocation, e := GetMemoryLocationName(src[0])
+	if e != nil {
+		return fmt.Errorf("Error getting source memory location: %w", e)
+	}
+	dstLocation, e := GetMemoryLocationName(dst[0])
+	if e != nil {
+		return fmt.Errorf("Error getting destination memory location: %w", e)
+	}
+	if (srcLocation == "Cpu") && (dstLocation == "Cpu") {
+		for i := range srcValues {
+			status := C.CopyCpuTensorData(srcValues[i], dstValues[i])
+			if status != nil {
+				return fmt.Errorf("Error copying tensor at index %d: %w", i,
+					statusToError(status))
+			}
+		}
+		return nil
+	}
+
+	status := C.CopyOrtTensors(ortEnv, &srcValues[0], &dstValues[0],
+		C.size_t(len(src)))
+	if status != nil {
+		return statusToError(status)
+	}
+	return nil
+}
+
+// Copies the contents of the src tensor into dst; a shorthand for CopyTensors
+// with a single pair.
+func CopyTensor(src, dst Value) error {
+	return CopyTensors([]Value{src}, []Value{dst})
+}
+
+// Returns the name of the memory location holding v's underlying data, e.g.
+// "Cpu" or "Cuda". Useful for checking whether a value's data can be accessed
+// from Go, which is only the case for CPU-backed values.
+func GetMemoryLocationName(v Value) (string, error) {
+	var name *C.char
+	status := C.GetTensorMemoryInfoName(v.GetInternals().ortValue, &name)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return C.GoString(name), nil
 }
 
 // Creates and returns a ModelMetadata instance for this session's model. The
@@ -3047,6 +3346,24 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 
 	// For non-string tensors, we will always release the original OrtValue.
 	defer C.ReleaseOrtValue(v)
+
+	// A value whose data lives in non-CPU memory - such as an output bound
+	// with BindOutputToDevice on a CUDA MemoryInfo - has no host-accessible
+	// data buffer, and dereferencing the pointer GetTensorMutableData returns
+	// for it would crash. Report an error instead; such values must be copied
+	// to a CPU-backed tensor with CopyTensors to be read.
+	var locationName *C.char
+	status = C.GetTensorMemoryInfoName(v, &locationName)
+	if status != nil {
+		return nil, fmt.Errorf("Error getting tensor memory location: %w",
+			statusToError(status))
+	}
+	if C.GoString(locationName) != "Cpu" {
+		return nil, fmt.Errorf("The value's data is in non-CPU memory (%s) "+
+			"and can't be converted to a Go-managed Value; copy it to a "+
+			"CPU-backed tensor with CopyTensors instead",
+			C.GoString(locationName))
+	}
 
 	// Now we start the process of copying the data into a Go-backed OrtValue.
 	var tensorData unsafe.Pointer

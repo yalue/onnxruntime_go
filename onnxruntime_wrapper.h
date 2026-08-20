@@ -451,6 +451,63 @@ OrtStatus *GetStringTensorElementLength(OrtValue *v, size_t index,
 OrtStatus *GetStringTensorElement(OrtValue *v, size_t buffer_length,
   size_t index, void *buffer);
 
+// Wraps ort_api->CreateMemoryInfo, for creating memory infos referring to
+// non-CPU device memory, such as "Cuda". (CreateOrtMemoryInfo above always
+// creates the default CPU memory info.)
+OrtStatus *CreateOrtCustomMemoryInfo(char *name, int allocator_type, int id,
+  int mem_type, OrtMemoryInfo **out);
+
+// Wraps ort_api->CreateAllocator. The returned allocator wraps the session's
+// internal allocator for the given memory info, and becomes invalid when the
+// session is released.
+OrtStatus *CreateOrtAllocator(OrtSession *session, OrtMemoryInfo *mem_info,
+  OrtAllocator **out);
+
+// Wraps ort_api->ReleaseAllocator. Must only be used with allocators created
+// by CreateOrtAllocator, never with the default allocator.
+void ReleaseOrtAllocator(OrtAllocator *a);
+
+// Wraps ort_api->CreateTensorAsOrtValue: creates an uninitialized tensor
+// owned by the given allocator, which may allocate it on a non-CPU device.
+// (CreateTensorAsOrtValue above always uses the default CPU allocator.)
+OrtStatus *CreateOrtTensorWithAllocator(OrtAllocator *allocator,
+  int64_t *shape, int64_t shape_size, ONNXTensorElementDataType dtype,
+  OrtValue **out);
+
+// Wraps ort_api->CopyTensors with a NULL stream. Copies src[i] to dst[i];
+// all sources must share one memory location and all destinations another.
+// The data transfer between devices is implemented by an execution provider
+// registered in the env.
+OrtStatus *CopyOrtTensors(OrtEnv *env, OrtValue **src, OrtValue **dst,
+  size_t count);
+
+// Wraps ort_api->BindOutputToDevice.
+OrtStatus *BindOutputToDevice(OrtIoBinding *b, char *name,
+  OrtMemoryInfo *mem_info);
+
+// Wraps ort_api->SynchronizeBoundInputs.
+OrtStatus *SynchronizeBoundInputs(OrtIoBinding *b);
+
+// Wraps ort_api->SynchronizeBoundOutputs.
+OrtStatus *SynchronizeBoundOutputs(OrtIoBinding *b);
+
+// Wraps ort_api->GetTensorMemoryInfo followed by ort_api->MemoryInfoGetName,
+// to report where a tensor's data lives (e.g. "Cpu", "Cuda"). The returned
+// name is owned by onnxruntime and valid for the value's lifetime; do not
+// free it.
+OrtStatus *GetTensorMemoryInfoName(OrtValue *v, const char **name);
+
+// Wraps ort_api->MemoryInfoGetName. The returned name is owned by onnxruntime
+// and valid for the memory info's lifetime; do not free it.
+OrtStatus *GetMemoryInfoName(OrtMemoryInfo *info, const char **name);
+
+// Copies the data of one CPU-resident non-string tensor into another using
+// memcpy, after checking that their data sizes match exactly. This is the
+// fallback used by the Go CopyTensors function when both sides are in CPU
+// memory, for which ort_api->CopyTensors provides no data-transfer
+// implementation.
+OrtStatus *CopyCpuTensorData(OrtValue *src, OrtValue *dst);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
