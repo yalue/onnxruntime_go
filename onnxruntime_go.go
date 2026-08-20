@@ -2784,6 +2784,13 @@ func (b *IoBinding) GetBoundOutputValues() ([]Value, error) {
 	toReturn := make([]Value, int(numValues))
 	for i := range valuesSlice {
 		toReturn[i], e = createGoValueFromOrtValue(valuesSlice[i])
+		// createGoValueFromOrtValue always takes ownership of the OrtValue:
+		// it releases it on failure, and otherwise it is either released
+		// during conversion or when the corresponding Go Value is
+		// Destroy()'d. Make it nil right away so the cleanup below can't
+		// double-release it, whether the error occurred at this index or a
+		// later one.
+		valuesSlice[i] = nil
 		if e != nil {
 			// Upon error, we have a lot to clean up:
 			//  All OrtValues from C that haven't been converted...
@@ -3339,6 +3346,24 @@ func createTensorFromOrtValue(v *C.OrtValue) (Value, error) {
 
 	// For non-string tensors, we will always release the original OrtValue.
 	defer C.ReleaseOrtValue(v)
+
+	// A value whose data lives in non-CPU memory - such as an output bound
+	// with BindOutputToDevice on a CUDA MemoryInfo - has no host-accessible
+	// data buffer, and dereferencing the pointer GetTensorMutableData returns
+	// for it would crash. Report an error instead; such values must be copied
+	// to a CPU-backed tensor with CopyTensors to be read.
+	var locationName *C.char
+	status = C.GetTensorMemoryInfoName(v, &locationName)
+	if status != nil {
+		return nil, fmt.Errorf("Error getting tensor memory location: %w",
+			statusToError(status))
+	}
+	if C.GoString(locationName) != "Cpu" {
+		return nil, fmt.Errorf("The value's data is in non-CPU memory (%s) "+
+			"and can't be converted to a Go-managed Value; copy it to a "+
+			"CPU-backed tensor with CopyTensors instead",
+			C.GoString(locationName))
+	}
 
 	// Now we start the process of copying the data into a Go-backed OrtValue.
 	var tensorData unsafe.Pointer
