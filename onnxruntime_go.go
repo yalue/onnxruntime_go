@@ -556,6 +556,39 @@ func GetMemoryInfo() (*C.OrtMemoryInfo, error) {
 	return ortMemoryInfo, nil
 }
 
+// NewDeviceMemoryInfo creates an OrtMemoryInfo referring to a non-CPU
+// device's memory. The name must be one that onnxruntime knows, such as
+// "Cuda", and the device ID selects the device of that type. The caller must
+// free the returned OrtMemoryInfo using ReleaseMemoryInfo when it's no longer
+// needed.
+func NewDeviceMemoryInfo(name string, deviceID int) (*C.OrtMemoryInfo, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var memInfo *C.OrtMemoryInfo
+	status := C.CreateOrtDeviceMemoryInfo(cName, C.int(deviceID), &memInfo)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return memInfo, nil
+}
+
+// ReleaseMemoryInfo frees an OrtMemoryInfo returned by NewDeviceMemoryInfo.
+// Don't call this on the environment-wide OrtMemoryInfo returned by
+// GetMemoryInfo.
+func ReleaseMemoryInfo(memInfo *C.OrtMemoryInfo) {
+	C.ReleaseOrtMemoryInfo(memInfo)
+}
+
+// ReleaseAllocator frees an OrtAllocator returned by a session's
+// CreateAllocator function. Don't release an allocator that a LoraAdapter or
+// other object using it may still need.
+func ReleaseAllocator(allocator *C.OrtAllocator) {
+	C.ReleaseAllocator(allocator)
+}
+
 // The Shape type holds the shape of the tensors used by the network input and
 // outputs.
 type Shape []int64
@@ -2229,7 +2262,7 @@ func NewLoraAdapter(adapterFilePath string) (*LoraAdapter, error) {
 	}
 	defer C.free(unsafe.Pointer(cPath))
 	var l *C.OrtLoraAdapter
-	status := C.CreateLoraAdapter(cPath, &l)
+	status := C.CreateLoraAdapter(cPath, nil, &l)
 	if status != nil {
 		return nil, statusToError(status)
 	}
@@ -2247,7 +2280,50 @@ func NewLoraAdapterWithData(adapterData []byte) (*LoraAdapter, error) {
 	}
 	var l *C.OrtLoraAdapter
 	status := C.CreateLoraAdapterFromArray(unsafe.Pointer(&(adapterData[0])),
-		C.size_t(len(adapterData)), &l)
+		C.size_t(len(adapterData)), nil, &l)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &LoraAdapter{l: l}, nil
+}
+
+// The same as NewLoraAdapter, but takes an allocator to hold the adapter's
+// parameters. Passing a device allocator, such as one returned by a session's
+// CreateAllocator function, copies the parameters to the device once at load
+// time rather than at each Run. Passing nil behaves like NewLoraAdapter. The
+// allocator must not be released before the returned LoraAdapter is
+// destroyed.
+func NewLoraAdapterWithAllocator(adapterFilePath string,
+	allocator *C.OrtAllocator) (*LoraAdapter, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	cPath, e := createOrtCharString(adapterFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error encoding adapter file path: %w", e)
+	}
+	defer C.free(unsafe.Pointer(cPath))
+	var l *C.OrtLoraAdapter
+	status := C.CreateLoraAdapter(cPath, allocator, &l)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &LoraAdapter{l: l}, nil
+}
+
+// The same as NewLoraAdapterWithAllocator, but takes a slice of bytes
+// containing the .onnx_adapter data rather than a file path.
+func NewLoraAdapterWithDataAndAllocator(adapterData []byte,
+	allocator *C.OrtAllocator) (*LoraAdapter, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	if len(adapterData) == 0 {
+		return nil, fmt.Errorf("Missing adapter data")
+	}
+	var l *C.OrtLoraAdapter
+	status := C.CreateLoraAdapterFromArray(unsafe.Pointer(&(adapterData[0])),
+		C.size_t(len(adapterData)), allocator, &l)
 	if status != nil {
 		return nil, statusToError(status)
 	}
@@ -2860,6 +2936,22 @@ func (s *AdvancedSession) GetModelMetadata() (*ModelMetadata, error) {
 	}, nil
 }
 
+// CreateAllocator returns an allocator for the device described by the given
+// OrtMemoryInfo, such as one returned by NewDeviceMemoryInfo. The session
+// must have an execution provider for that device configured, or this will
+// return an error. The caller must free the returned allocator using
+// ReleaseAllocator when it's no longer needed, but not before destroying any
+// object created with it.
+func (s *AdvancedSession) CreateAllocator(
+	memInfo *C.OrtMemoryInfo) (*C.OrtAllocator, error) {
+	var allocator *C.OrtAllocator
+	status := C.CreateAllocator(s.ortSession, memInfo, &allocator)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return allocator, nil
+}
+
 // This type of session does not require specifying input and output tensors
 // ahead of time, but allows users to pass the list of input and output tensors
 // when calling Run(). As with AdvancedSession, users must still call Destroy()
@@ -3215,6 +3307,13 @@ func (s *DynamicAdvancedSession) RunWithBinding(b *IoBinding) error {
 // needed.
 func (s *DynamicAdvancedSession) GetModelMetadata() (*ModelMetadata, error) {
 	return s.s.GetModelMetadata()
+}
+
+// CreateAllocator returns an allocator for the device described by the given
+// OrtMemoryInfo. See (*AdvancedSession).CreateAllocator.
+func (s *DynamicAdvancedSession) CreateAllocator(
+	memInfo *C.OrtMemoryInfo) (*C.OrtAllocator, error) {
+	return s.s.CreateAllocator(memInfo)
 }
 
 // Holds information about the name, shape, and type of an input or output to a
