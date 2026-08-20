@@ -2470,6 +2470,272 @@ func BenchmarkCUDASession(b *testing.B) {
 	benchmarkBigSessionWithOptions(b, sessionOptions)
 }
 
+// Exercises the MemoryInfo, Allocator, DeviceTensor, and CopyTensors
+// plumbing using CPU memory, so that it runs on systems without any GPU.
+func TestMemoryInfoAndDeviceTensorCPU(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	memInfo, e := NewMemoryInfo("Cpu", AllocatorTypeDevice, 0, MemTypeDefault)
+	if e != nil {
+		t.Fatalf("Error creating CPU memory info: %s\n", e)
+	}
+	defer memInfo.Destroy()
+	name, e := memInfo.Name()
+	if e != nil {
+		t.Fatalf("Error getting memory info name: %s\n", e)
+	}
+	if name != "Cpu" {
+		t.Fatalf("Incorrect memory info name: expected \"Cpu\", got \"%s\"\n",
+			name)
+	}
+
+	session, e := NewDynamicAdvancedSession("test_data/example ż 大 김.onnx",
+		nil, nil, nil)
+	if e != nil {
+		t.Fatalf("Error creating session: %s\n", e)
+	}
+	defer session.Destroy()
+	allocator, e := session.CreateAllocator(memInfo)
+	if e != nil {
+		t.Fatalf("Error creating allocator: %s\n", e)
+	}
+	defer allocator.Destroy()
+
+	deviceTensor, e := NewDeviceTensor(allocator, NewShape(1, 2),
+		TensorElementDataTypeInt32)
+	if e != nil {
+		t.Fatalf("Error creating device tensor: %s\n", e)
+	}
+	defer deviceTensor.Destroy()
+	if !deviceTensor.GetShape().Equals(NewShape(1, 2)) {
+		t.Fatalf("Incorrect device tensor shape: %s\n",
+			deviceTensor.GetShape())
+	}
+	location, e := GetMemoryLocationName(deviceTensor)
+	if e != nil {
+		t.Fatalf("Error getting device tensor's memory location: %s\n", e)
+	}
+	if location != "Cpu" {
+		t.Fatalf("Incorrect memory location for a CPU-allocated device "+
+			"tensor: %s\n", location)
+	}
+
+	// Round-trip data through the allocator-owned tensor and make sure it
+	// comes back unchanged.
+	source, e := NewTensor(NewShape(1, 2), []int32{1000, 337})
+	if e != nil {
+		t.Fatalf("Error creating source tensor: %s\n", e)
+	}
+	defer source.Destroy()
+	destination, e := NewEmptyTensor[int32](NewShape(1, 2))
+	if e != nil {
+		t.Fatalf("Error creating destination tensor: %s\n", e)
+	}
+	defer destination.Destroy()
+	e = CopyTensor(source, deviceTensor)
+	if e != nil {
+		t.Fatalf("Error copying into the device tensor: %s\n", e)
+	}
+	e = CopyTensor(deviceTensor, destination)
+	if e != nil {
+		t.Fatalf("Error copying out of the device tensor: %s\n", e)
+	}
+	for i, v := range destination.GetData() {
+		if v != source.GetData()[i] {
+			t.Fatalf("Round-tripped data mismatch at index %d: expected %d, "+
+				"got %d\n", i, source.GetData()[i], v)
+		}
+	}
+}
+
+// Registers the CUDA execution provider library with the runtime
+// environment, which is what gives CopyTensors a data-transfer implementation
+// between CPU and CUDA device memory. Skips the test if the library can't be
+// found next to the onnxruntime shared library or can't be registered. The
+// returned function must be called to unregister the library before the
+// environment is cleaned up.
+func registerCUDAProviderLibrary(t testing.TB) func() {
+	name := "libonnxruntime_providers_cuda.so"
+	if runtime.GOOS == "windows" {
+		name = "onnxruntime_providers_cuda.dll"
+	}
+	path := filepath.Join(filepath.Dir(getTestSharedLibraryPath(t)), name)
+	e := RegisterExecutionProviderLibrary("cuda", path)
+	if e != nil {
+		t.Skipf("Error registering the CUDA provider library at %s: %s. "+
+			"Copying tensors to or from CUDA device memory requires the "+
+			"CUDA provider library to be registered with the environment. "+
+			"Skipping the remainder of this test.\n", path, e)
+	}
+	return func() {
+		e := UnregisterExecutionProviderLibrary("cuda")
+		if e != nil {
+			t.Logf("Error unregistering the CUDA provider library: %s\n", e)
+			t.Fail()
+		}
+	}
+}
+
+// Runs the session used by TestIoBinding on the CUDA provider, with the
+// inputs and outputs bound to tensors resident in CUDA device memory. This is
+// the usage pattern required by the CUDA execution provider's
+// "enable_cuda_graph" option: stable device addresses across runs, with fresh
+// input data copied into the same bound tensors between runs.
+func testCUDADeviceIoBinding(t *testing.T, sessionOptions *SessionOptions) {
+	session, e := NewDynamicAdvancedSession("test_data/example ż 大 김.onnx",
+		nil, nil, sessionOptions)
+	if e != nil {
+		t.Fatalf("Error creating session: %s\n", e)
+	}
+	defer session.Destroy()
+
+	cudaMemInfo, e := NewMemoryInfo("Cuda", AllocatorTypeDevice, 0,
+		MemTypeDefault)
+	if e != nil {
+		t.Fatalf("Error creating CUDA memory info: %s\n", e)
+	}
+	defer cudaMemInfo.Destroy()
+	allocator, e := session.CreateAllocator(cudaMemInfo)
+	if e != nil {
+		t.Fatalf("Error creating CUDA allocator: %s\n", e)
+	}
+	defer allocator.Destroy()
+
+	deviceInput, e := NewDeviceTensor(allocator, NewShape(1, 2),
+		TensorElementDataTypeInt32)
+	if e != nil {
+		t.Fatalf("Error creating device input tensor: %s\n", e)
+	}
+	defer deviceInput.Destroy()
+	deviceOutput, e := NewDeviceTensor(allocator, NewShape(1),
+		TensorElementDataTypeInt32)
+	if e != nil {
+		t.Fatalf("Error creating device output tensor: %s\n", e)
+	}
+	defer deviceOutput.Destroy()
+	location, e := GetMemoryLocationName(deviceInput)
+	if e != nil {
+		t.Fatalf("Error getting device input's memory location: %s\n", e)
+	}
+	if location == "Cpu" {
+		t.Fatalf("Device input tensor is unexpectedly in CPU memory\n")
+	}
+
+	binding, e := session.CreateIoBinding()
+	if e != nil {
+		t.Fatalf("Error creating I/O binding: %s\n", e)
+	}
+	defer binding.Destroy()
+	e = binding.BindInput("in", deviceInput)
+	if e != nil {
+		t.Fatalf("Error binding device input: %s\n", e)
+	}
+	e = binding.BindOutput("out", deviceOutput)
+	if e != nil {
+		t.Fatalf("Error binding device output: %s\n", e)
+	}
+
+	hostInput, e := NewTensor(NewShape(1, 2), []int32{1000, 337})
+	if e != nil {
+		t.Fatalf("Error creating host input tensor: %s\n", e)
+	}
+	defer hostInput.Destroy()
+	hostOutput, e := NewEmptyTensor[int32](NewShape(1))
+	if e != nil {
+		t.Fatalf("Error creating host output tensor: %s\n", e)
+	}
+	defer hostOutput.Destroy()
+
+	// Run several times, copying fresh input data into the same bound device
+	// tensor each time; the output must track the input on every run. (With
+	// "enable_cuda_graph" this exercises graph capture and replay: the first
+	// run captures, the later ones replay.)
+	for i := int32(0); i < 3; i++ {
+		hostInput.GetData()[0] = 1000 + i
+		hostInput.GetData()[1] = 337
+		e = CopyTensor(hostInput, deviceInput)
+		if e != nil {
+			t.Fatalf("Run %d: error copying input to device: %s\n", i, e)
+		}
+		e = binding.SynchronizeBoundInputs()
+		if e != nil {
+			t.Fatalf("Run %d: error synchronizing bound inputs: %s\n", i, e)
+		}
+		e = session.RunWithBinding(binding)
+		if e != nil {
+			t.Fatalf("Run %d: error running session with device-bound I/O: "+
+				"%s\n", i, e)
+		}
+		e = binding.SynchronizeBoundOutputs()
+		if e != nil {
+			t.Fatalf("Run %d: error synchronizing bound outputs: %s\n", i, e)
+		}
+		e = CopyTensor(deviceOutput, hostOutput)
+		if e != nil {
+			t.Fatalf("Run %d: error copying output from device: %s\n", i, e)
+		}
+		expected := 1337 + i
+		if hostOutput.GetData()[0] != expected {
+			t.Fatalf("Run %d: incorrect result: expected %d, got %d\n", i,
+				expected, hostOutput.GetData()[0])
+		}
+	}
+
+	// GetBoundOutputValues must refuse to convert an output residing in
+	// device memory rather than crashing on the inaccessible data pointer.
+	_, e = binding.GetBoundOutputValues()
+	if e == nil {
+		t.Fatalf("GetBoundOutputValues didn't return an error for a " +
+			"device-resident output\n")
+	}
+	t.Logf("Got expected error getting device-resident bound output "+
+		"values: %s\n", e)
+}
+
+func TestCUDADeviceIoBinding(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	sessionOptions := getCUDASessionOptions(t)
+	defer sessionOptions.Destroy()
+	unregister := registerCUDAProviderLibrary(t)
+	defer unregister()
+	testCUDADeviceIoBinding(t, sessionOptions)
+}
+
+func TestCUDAGraphDeviceIoBinding(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+	cudaOptions, e := NewCUDAProviderOptions()
+	if e != nil {
+		t.Skipf("Error creating CUDA provider options: %s. "+
+			"Your version of the onnxruntime library may not support CUDA. "+
+			"Skipping the remainder of this test.\n", e)
+	}
+	defer cudaOptions.Destroy()
+	e = cudaOptions.Update(map[string]string{
+		"device_id":         "0",
+		"enable_cuda_graph": "1",
+	})
+	if e != nil {
+		t.Skipf("Error updating CUDA options to enable CUDA graphs: %s. "+
+			"Your system may not support CUDA, or CUDA may be misconfigured "+
+			"or a version incompatible with this version of onnxruntime. "+
+			"Skipping the remainder of this test.\n", e)
+	}
+	sessionOptions, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating SessionOptions: %s\n", e)
+	}
+	defer sessionOptions.Destroy()
+	e = sessionOptions.AppendExecutionProviderCUDA(cudaOptions)
+	if e != nil {
+		t.Fatalf("Error setting CUDA execution provider options: %s\n", e)
+	}
+	unregister := registerCUDAProviderLibrary(t)
+	defer unregister()
+	testCUDADeviceIoBinding(t, sessionOptions)
+}
+
 // Creates a SessionOptions struct that's configured to enable TensorRT.
 // Basically the same as getCUDASessionOptions; see the comments there.
 func getTensorRTSessionOptions(t testing.TB) *SessionOptions {
