@@ -2229,7 +2229,7 @@ func NewLoraAdapter(adapterFilePath string) (*LoraAdapter, error) {
 	}
 	defer C.free(unsafe.Pointer(cPath))
 	var l *C.OrtLoraAdapter
-	status := C.CreateLoraAdapter(cPath, &l)
+	status := C.CreateLoraAdapter(cPath, nil, &l)
 	if status != nil {
 		return nil, statusToError(status)
 	}
@@ -2247,7 +2247,49 @@ func NewLoraAdapterWithData(adapterData []byte) (*LoraAdapter, error) {
 	}
 	var l *C.OrtLoraAdapter
 	status := C.CreateLoraAdapterFromArray(unsafe.Pointer(&(adapterData[0])),
-		C.size_t(len(adapterData)), &l)
+		C.size_t(len(adapterData)), nil, &l)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &LoraAdapter{l: l}, nil
+}
+
+// The same as NewLoraAdapter, but takes an allocator to hold the adapter's
+// parameters. Passing a device allocator, such as one returned by a session's
+// CreateAllocator function, copies the parameters to the device once at load
+// time rather than at each Run. Passing nil behaves like NewLoraAdapter. The
+// allocator must not be destroyed before the returned LoraAdapter is.
+func NewLoraAdapterWithAllocator(adapterFilePath string,
+	allocator *Allocator) (*LoraAdapter, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	cPath, e := createOrtCharString(adapterFilePath)
+	if e != nil {
+		return nil, fmt.Errorf("Error encoding adapter file path: %w", e)
+	}
+	defer C.free(unsafe.Pointer(cPath))
+	var l *C.OrtLoraAdapter
+	status := C.CreateLoraAdapter(cPath, allocator.ortAllocator(), &l)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &LoraAdapter{l: l}, nil
+}
+
+// The same as NewLoraAdapterWithAllocator, but takes a slice of bytes
+// containing the .onnx_adapter data rather than a file path.
+func NewLoraAdapterWithDataAndAllocator(adapterData []byte,
+	allocator *Allocator) (*LoraAdapter, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	if len(adapterData) == 0 {
+		return nil, fmt.Errorf("Missing adapter data")
+	}
+	var l *C.OrtLoraAdapter
+	status := C.CreateLoraAdapterFromArray(unsafe.Pointer(&(adapterData[0])),
+		C.size_t(len(adapterData)), allocator.ortAllocator(), &l)
 	if status != nil {
 		return nil, statusToError(status)
 	}
@@ -2844,6 +2886,120 @@ func (b *IoBinding) ClearBoundOutputs() {
 		return
 	}
 	C.ClearBoundOutputs(b.o)
+}
+
+// Wraps the C OrtAllocatorType enum, used when creating a MemoryInfo.
+type AllocatorType int
+
+const (
+	AllocatorTypeInvalid AllocatorType = C.OrtInvalidAllocator
+	AllocatorTypeDevice  AllocatorType = C.OrtDeviceAllocator
+	AllocatorTypeArena   AllocatorType = C.OrtArenaAllocator
+)
+
+// Wraps the C OrtMemType enum, used when creating a MemoryInfo.
+type MemType int
+
+const (
+	MemTypeCPUInput  MemType = C.OrtMemTypeCPUInput
+	MemTypeCPUOutput MemType = C.OrtMemTypeCPUOutput
+	MemTypeCPU       MemType = C.OrtMemTypeCPU
+	MemTypeDefault   MemType = C.OrtMemTypeDefault
+)
+
+// A MemoryInfo describes a memory location tensors can live in, such as the
+// memory of a CUDA device. (The library's default tensors all live in the
+// implicit CPU location; this type exists for referring to the others.) It
+// must be freed using Destroy when no longer needed.
+type MemoryInfo struct {
+	o *C.OrtMemoryInfo
+}
+
+// Creates a MemoryInfo referring to the named memory location; for example,
+// NewMemoryInfo("Cuda", AllocatorTypeDevice, 0, MemTypeDefault) refers to the
+// memory of the first CUDA device. The known location names are defined by
+// onnxruntime and its execution providers. The returned MemoryInfo must be
+// freed using Destroy when no longer needed.
+func NewMemoryInfo(name string, allocatorType AllocatorType, deviceID int,
+	memType MemType) (*MemoryInfo, error) {
+	if !IsInitialized() {
+		return nil, NotInitializedError
+	}
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var o *C.OrtMemoryInfo
+	status := C.CreateOrtCustomMemoryInfo(cName, C.int(allocatorType),
+		C.int(deviceID), C.int(memType), &o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &MemoryInfo{
+		o: o,
+	}, nil
+}
+
+// Returns the name of the memory location this MemoryInfo refers to, e.g.
+// "Cpu" or "Cuda".
+func (m *MemoryInfo) Name() (string, error) {
+	var name *C.char
+	status := C.GetMemoryInfoName(m.o, &name)
+	if status != nil {
+		return "", statusToError(status)
+	}
+	return C.GoString(name), nil
+}
+
+// Frees the resources associated with the MemoryInfo.
+func (m *MemoryInfo) Destroy() error {
+	if m.o != nil {
+		C.ReleaseOrtMemoryInfo(m.o)
+		m.o = nil
+	}
+	return nil
+}
+
+// An Allocator allocates tensors in the memory location described by the
+// MemoryInfo it was created with - including non-CPU locations such as CUDA
+// device memory. It wraps a session's internal allocator and becomes invalid
+// when that session is destroyed, so Destroy the Allocator, and any
+// DeviceTensors allocated from it, before destroying the session.
+type Allocator struct {
+	o *C.OrtAllocator
+}
+
+// Creates an Allocator for this session, allocating in the location described
+// by the given MemoryInfo. The MemoryInfo is no longer needed after this
+// function returns. The returned Allocator must be freed using Destroy before
+// the session it came from.
+func (s *DynamicAdvancedSession) CreateAllocator(m *MemoryInfo) (*Allocator,
+	error) {
+	var o *C.OrtAllocator
+	status := C.CreateOrtAllocator(s.s.ortSession, m.o, &o)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	return &Allocator{
+		o: o,
+	}, nil
+}
+
+// Frees the resources associated with the Allocator. Tensors allocated from
+// it must be destroyed first.
+func (a *Allocator) Destroy() error {
+	if a.o != nil {
+		C.ReleaseOrtAllocator(a.o)
+		a.o = nil
+	}
+	return nil
+}
+
+// Returns the underlying OrtAllocator, or NULL for a nil Allocator, so callers
+// can treat "no allocator" and "nil allocator" the same way.
+func (a *Allocator) ortAllocator() *C.OrtAllocator {
+	if a == nil {
+		return nil
+	}
+	return a.o
 }
 
 // Creates and returns a ModelMetadata instance for this session's model. The

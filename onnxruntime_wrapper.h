@@ -264,14 +264,16 @@ OrtStatus *AddRunConfigEntry(OrtRunOptions *o, char *key, char *value);
 const char *GetRunConfigEntry(OrtRunOptions *o, char *key);
 
 // LoraAdapter helpers
-// Wraps ort_api->CreateLoraAdapter, passing a NULL allocator so the adapter's
-// parameters stay on the CPU until a run requires them on a device.
+// Wraps ort_api->CreateLoraAdapter. The allocator may be NULL, in which case
+// the adapter's parameters stay on the CPU until a run requires them on a
+// device.
 // NOTE: takes an ORTCHAR_T*.
-OrtStatus *CreateLoraAdapter(char *path, OrtLoraAdapter **out);
-// Wraps ort_api->CreateLoraAdapterFromArray, passing a NULL allocator like
+OrtStatus *CreateLoraAdapter(char *path, OrtAllocator *allocator,
+  OrtLoraAdapter **out);
+// Wraps ort_api->CreateLoraAdapterFromArray. The allocator may be NULL like
 // CreateLoraAdapter.
 OrtStatus *CreateLoraAdapterFromArray(void *bytes, size_t num_bytes,
-  OrtLoraAdapter **out);
+  OrtAllocator *allocator, OrtLoraAdapter **out);
 // Wraps ort_api->ReleaseLoraAdapter
 void ReleaseLoraAdapter(OrtLoraAdapter *a);
 // Wraps ort_api->RunOptionsAddActiveLoraAdapter
@@ -450,6 +452,26 @@ OrtStatus *GetStringTensorElementLength(OrtValue *v, size_t index,
 // Wraps ort_api->GetStringTensorElement
 OrtStatus *GetStringTensorElement(OrtValue *v, size_t buffer_length,
   size_t index, void *buffer);
+
+// Wraps ort_api->CreateMemoryInfo, for creating memory infos referring to
+// non-CPU device memory, such as "Cuda". (CreateOrtMemoryInfo above always
+// creates the default CPU memory info.)
+OrtStatus *CreateOrtCustomMemoryInfo(char *name, int allocator_type, int id,
+  int mem_type, OrtMemoryInfo **out);
+
+// Wraps ort_api->CreateAllocator. The returned allocator wraps the session's
+// internal allocator for the given memory info, and becomes invalid when the
+// session is released.
+OrtStatus *CreateOrtAllocator(OrtSession *session, OrtMemoryInfo *mem_info,
+  OrtAllocator **out);
+
+// Wraps ort_api->ReleaseAllocator. Must only be used with allocators created
+// by CreateOrtAllocator, never with the default allocator.
+void ReleaseOrtAllocator(OrtAllocator *a);
+
+// Wraps ort_api->MemoryInfoGetName. The returned name is owned by onnxruntime
+// and valid for the memory info's lifetime; do not free it.
+OrtStatus *GetMemoryInfoName(OrtMemoryInfo *info, const char **name);
 
 #ifdef __cplusplus
 }  // extern "C"

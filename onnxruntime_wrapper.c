@@ -393,13 +393,15 @@ const char *GetRunConfigEntry(OrtRunOptions *o, char *key) {
   return ort_api->GetRunConfigEntry(o, key);
 }
 
-OrtStatus *CreateLoraAdapter(char *path, OrtLoraAdapter **out) {
-  return ort_api->CreateLoraAdapter((const ORTCHAR_T*) path, NULL, out);
+OrtStatus *CreateLoraAdapter(char *path, OrtAllocator *allocator,
+  OrtLoraAdapter **out) {
+  return ort_api->CreateLoraAdapter((const ORTCHAR_T*) path, allocator, out);
 }
 
 OrtStatus *CreateLoraAdapterFromArray(void *bytes, size_t num_bytes,
-  OrtLoraAdapter **out) {
-  return ort_api->CreateLoraAdapterFromArray(bytes, num_bytes, NULL, out);
+  OrtAllocator *allocator, OrtLoraAdapter **out) {
+  return ort_api->CreateLoraAdapterFromArray(bytes, num_bytes, allocator,
+    out);
 }
 
 void ReleaseLoraAdapter(OrtLoraAdapter *a) {
@@ -678,4 +680,23 @@ OrtStatus *GetStringTensorElementLength(OrtValue *v, size_t index,
 OrtStatus *GetStringTensorElement(OrtValue *v, size_t buffer_length,
   size_t index, void *buffer) {
   return ort_api->GetStringTensorElement(v, buffer_length, index, buffer);
+}
+
+OrtStatus *CreateOrtCustomMemoryInfo(char *name, int allocator_type, int id,
+  int mem_type, OrtMemoryInfo **out) {
+  return ort_api->CreateMemoryInfo(name, (enum OrtAllocatorType) allocator_type,
+    id, (enum OrtMemType) mem_type, out);
+}
+
+OrtStatus *CreateOrtAllocator(OrtSession *session, OrtMemoryInfo *mem_info,
+  OrtAllocator **out) {
+  return ort_api->CreateAllocator(session, mem_info, out);
+}
+
+void ReleaseOrtAllocator(OrtAllocator *a) {
+  ort_api->ReleaseAllocator(a);
+}
+
+OrtStatus *GetMemoryInfoName(OrtMemoryInfo *info, const char **name) {
+  return ort_api->MemoryInfoGetName(info, name);
 }
