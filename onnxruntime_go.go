@@ -67,6 +67,11 @@ func statusToError(status *C.OrtStatus) error {
 // on non-Windows systems, and "onnxruntime.dll" on Windows. Users wishing to
 // specify a particular location of this library must call this function prior
 // to calling onnxruntime.InitializeEnvironment().
+//
+// When the package is built with the "static" build tag (ONNX Runtime linked
+// statically into the executable), the path is ignored and the ORT entry
+// points are resolved from the process's own symbol table via dlopen(NULL);
+// callers should simply pass "".
 func SetSharedLibraryPath(path string) {
 	onnxSharedLibraryPath = path
 }
