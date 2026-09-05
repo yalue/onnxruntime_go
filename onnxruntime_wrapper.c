@@ -697,6 +697,84 @@ void ReleaseOrtAllocator(OrtAllocator *a) {
   ort_api->ReleaseAllocator(a);
 }
 
+OrtStatus *CreateOrtTensorWithAllocator(OrtAllocator *allocator,
+  int64_t *shape, int64_t shape_size, ONNXTensorElementDataType dtype,
+  OrtValue **out) {
+  return ort_api->CreateTensorAsOrtValue(allocator, shape,
+    (size_t) shape_size, dtype, out);
+}
+
+OrtStatus *CopyOrtTensors(OrtEnv *env, OrtValue **src, OrtValue **dst,
+  size_t count) {
+  return ort_api->CopyTensors(env, (const OrtValue* const*) src,
+    (OrtValue* const*) dst, NULL, count);
+}
+
+OrtStatus *BindOutputToDevice(OrtIoBinding *b, char *name,
+  OrtMemoryInfo *mem_info) {
+  return ort_api->BindOutputToDevice(b, name, mem_info);
+}
+
+OrtStatus *SynchronizeBoundInputs(OrtIoBinding *b) {
+  return ort_api->SynchronizeBoundInputs(b);
+}
+
+OrtStatus *SynchronizeBoundOutputs(OrtIoBinding *b) {
+  return ort_api->SynchronizeBoundOutputs(b);
+}
+
+OrtStatus *GetTensorMemoryInfoName(OrtValue *v, const char **name) {
+  const OrtMemoryInfo *mem_info = NULL;
+  OrtStatus *status = ort_api->GetTensorMemoryInfo(v, &mem_info);
+  if (status) return status;
+  return ort_api->MemoryInfoGetName(mem_info, name);
+}
+
 OrtStatus *GetMemoryInfoName(OrtMemoryInfo *info, const char **name) {
   return ort_api->MemoryInfoGetName(info, name);
+}
+
+OrtStatus *CopyCpuTensorData(OrtValue *src, OrtValue *dst) {
+  void *src_data = NULL;
+  void *dst_data = NULL;
+  size_t src_size = 0;
+  size_t dst_size = 0;
+  OrtStatus *status = ort_api->GetTensorMutableData(src, &src_data);
+  if (status) return status;
+  status = ort_api->GetTensorMutableData(dst, &dst_data);
+  if (status) return status;
+  status = ort_api->GetTensorSizeInBytes(src, &src_size);
+  if (status) return status;
+  status = ort_api->GetTensorSizeInBytes(dst, &dst_size);
+  if (status) return status;
+  if (src_size != dst_size) {
+    return ort_api->CreateStatus(ORT_INVALID_ARGUMENT,
+      "The source and destination tensor data sizes don't match");
+  }
+  memcpy(dst_data, src_data, src_size);
+  return NULL;
+}
+
+OrtStatus *GetMemoryInfoMemType(OrtMemoryInfo *info, int *out) {
+  OrtMemType mem_type = OrtMemTypeDefault;
+  OrtStatus *status = ort_api->MemoryInfoGetMemType(info, &mem_type);
+  if (status) return status;
+  *out = (int) mem_type;
+  return NULL;
+}
+
+void GetMemoryInfoDeviceType(OrtMemoryInfo *info, int *out) {
+  OrtMemoryInfoDeviceType device_type = OrtMemoryInfoDeviceType_CPU;
+  ort_api->MemoryInfoGetDeviceType(info, &device_type);
+  *out = (int) device_type;
+}
+
+OrtStatus *GetTensorMemoryInfoDeviceType(OrtValue *v, int *out) {
+  const OrtMemoryInfo *mem_info = NULL;
+  OrtMemoryInfoDeviceType device_type = OrtMemoryInfoDeviceType_CPU;
+  OrtStatus *status = ort_api->GetTensorMemoryInfo(v, &mem_info);
+  if (status) return status;
+  ort_api->MemoryInfoGetDeviceType(mem_info, &device_type);
+  *out = (int) device_type;
+  return NULL;
 }
