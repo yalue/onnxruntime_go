@@ -473,6 +473,21 @@ void ReleaseOrtAllocator(OrtAllocator *a);
 // and valid for the memory info's lifetime; do not free it.
 OrtStatus *GetMemoryInfoName(OrtMemoryInfo *info, const char **name);
 
+// Wraps ort_api->AllocatorGetStats, which calls OrtAllocator::GetStats. That
+// function pointer is optional, so an allocator that does not implement it
+// yields an empty set of entries rather than crashing. The returned instance
+// must be freed using ReleaseKeyValuePairs.
+OrtStatus *AllocatorGetStats(OrtAllocator *a, OrtKeyValuePairs **out);
+
+// Wraps ort_api->GetKeyValuePairs. The returned arrays are owned by the
+// OrtKeyValuePairs instance and remain valid until it is released; do not
+// free the strings or the arrays themselves.
+void GetKeyValuePairs(OrtKeyValuePairs *kvps, char ***keys, char ***values,
+  size_t *num_entries);
+
+// Wraps ort_api->ReleaseKeyValuePairs.
+void ReleaseKeyValuePairs(OrtKeyValuePairs *kvps);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
