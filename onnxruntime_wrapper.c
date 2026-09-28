@@ -700,3 +700,25 @@ void ReleaseOrtAllocator(OrtAllocator *a) {
 OrtStatus *GetMemoryInfoName(OrtMemoryInfo *info, const char **name) {
   return ort_api->MemoryInfoGetName(info, name);
 }
+
+OrtStatus *AllocatorGetStats(OrtAllocator *a, OrtKeyValuePairs **out) {
+  // ort_api->AllocatorGetStats dereferences OrtAllocator::GetStats without
+  // checking it, but that function pointer is optional (see the OrtAllocator
+  // documentation in onnxruntime_c_api.h). Hand back an empty set of entries
+  // for allocators that don't implement it.
+  if (a == NULL || a->GetStats == NULL) {
+    ort_api->CreateKeyValuePairs(out);
+    return NULL;
+  }
+  return ort_api->AllocatorGetStats(a, out);
+}
+
+void GetKeyValuePairs(OrtKeyValuePairs *kvps, char ***keys, char ***values,
+  size_t *num_entries) {
+  ort_api->GetKeyValuePairs(kvps, (const char * const **) keys,
+    (const char * const **) values, num_entries);
+}
+
+void ReleaseKeyValuePairs(OrtKeyValuePairs *kvps) {
+  ort_api->ReleaseKeyValuePairs(kvps);
+}

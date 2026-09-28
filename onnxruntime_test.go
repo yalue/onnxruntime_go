@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -3244,4 +3245,95 @@ func TestAppendExecutionProviderV2InvalidOption(t *testing.T) {
 		return
 	}
 	t.Logf("ORT silently accepted unknown option (also acceptable)\n")
+}
+
+// Verifies that Allocator.GetStats surfaces the statistics onnxruntime
+// reports for a session's allocator. The CPU memory info is used so the test
+// does not depend on any particular execution provider. Only the presence and
+// format of the documented entries are checked, since the exact numbers
+// depend on the platform, the build, and the model.
+//
+// Nothing is asserted about "NumArenaShrinkages": with the default arena
+// extend strategy (kNextPowerOfTwo) onnxruntime never considers the first
+// allocation region eligible for shrinkage, so a run that requests arena
+// shrinkage may legitimately release nothing and leave the counter at zero.
+func TestAllocatorGetStats(t *testing.T) {
+	InitializeRuntime(t)
+	defer CleanupRuntime(t)
+
+	options, e := NewSessionOptions()
+	if e != nil {
+		t.Fatalf("Error creating session options: %s\n", e)
+	}
+	defer options.Destroy()
+	if e = options.SetCpuMemArena(true); e != nil {
+		t.Fatalf("Error enabling the CPU mem arena: %s\n", e)
+	}
+
+	input, e := NewTensor(NewShape(1, 4), []float32{1, 2, 3, 4})
+	if e != nil {
+		t.Fatalf("Error creating the input tensor: %s\n", e)
+	}
+	defer input.Destroy()
+	output, e := NewEmptyTensor[float32](NewShape(4))
+	if e != nil {
+		t.Fatalf("Error creating the output tensor: %s\n", e)
+	}
+	defer output.Destroy()
+
+	session, e := NewDynamicAdvancedSession("test_data/example_big_fanout.onnx",
+		[]string{"input"}, []string{"output"}, options)
+	if e != nil {
+		t.Fatalf("Error creating the session: %s\n", e)
+	}
+	defer session.Destroy()
+
+	// "Cpu" is the name onnxruntime gives its CPU allocator, and an arena
+	// allocator is what a session with the CPU mem arena enabled reports.
+	memoryInfo, e := NewMemoryInfo("Cpu", AllocatorTypeArena, 0, MemTypeDefault)
+	if e != nil {
+		t.Fatalf("Error creating the memory info: %s\n", e)
+	}
+	defer memoryInfo.Destroy()
+	allocator, e := session.CreateAllocator(memoryInfo)
+	if e != nil {
+		t.Fatalf("Error creating the allocator: %s\n", e)
+	}
+	defer allocator.Destroy()
+
+	// The allocator only has something to report once the arena has served at
+	// least one allocation.
+	if e = session.Run([]Value{input}, []Value{output}); e != nil {
+		t.Fatalf("Error running the session: %s\n", e)
+	}
+
+	stats, e := allocator.GetStats()
+	if e != nil {
+		t.Fatalf("Error getting the allocator stats: %s\n", e)
+	}
+	if len(stats) == 0 {
+		t.Fatalf("Expected the allocator stats to be non-empty after a run\n")
+	}
+
+	// These are the entries that onnxruntime documents for an arena-based
+	// allocator (see the AllocatorStats list in onnxruntime_c_api.h). All of
+	// them are byte counts or plain counters, so all of them are integers.
+	documented := []string{"InUse", "TotalAllocated", "MaxInUse", "NumAllocs",
+		"NumArenaExtensions", "NumArenaShrinkages", "MaxAllocSize"}
+	for _, key := range documented {
+		value, ok := stats[key]
+		if !ok {
+			t.Errorf("Missing expected statistic \"%s\" in %v\n", key, stats)
+			continue
+		}
+		if _, e = strconv.ParseInt(value, 10, 64); e != nil {
+			t.Errorf("Statistic \"%s\" has the non-integer value \"%s\"\n",
+				key, value)
+		}
+	}
+
+	// The run above must have caused at least one allocation.
+	if numAllocs, ok := stats["NumAllocs"]; ok && numAllocs == "0" {
+		t.Errorf("Expected NumAllocs to be non-zero after a run\n")
+	}
 }

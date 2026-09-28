@@ -2993,6 +2993,39 @@ func (a *Allocator) Destroy() error {
 	return nil
 }
 
+// Returns the statistics the allocator reports, such as the number of bytes
+// currently in use ("InUse"), the peak number of bytes in use ("MaxInUse"),
+// and the number of times the allocator released unused memory back to the
+// system ("NumArenaShrinkages"). The full set of keys is defined by
+// onnxruntime and may grow over time, so the values are returned as a map.
+// Allocators that do not implement OrtAllocator::GetStats return an empty
+// map. The returned map is a copy: it remains valid after the Allocator is
+// destroyed.
+func (a *Allocator) GetStats() (map[string]string, error) {
+	var kvps *C.OrtKeyValuePairs
+	status := C.AllocatorGetStats(a.o, &kvps)
+	if status != nil {
+		return nil, statusToError(status)
+	}
+	defer C.ReleaseKeyValuePairs(kvps)
+	var keys, values **C.char
+	var numEntries C.size_t
+	C.GetKeyValuePairs(kvps, &keys, &values, &numEntries)
+	toReturn := make(map[string]string, int(numEntries))
+	if numEntries == 0 {
+		return toReturn, nil
+	}
+	// The arrays returned by GetKeyValuePairs point into the OrtKeyValuePairs
+	// instance, which is released above, so copy everything into Go strings
+	// before returning.
+	keySlice := unsafe.Slice(keys, int(numEntries))
+	valueSlice := unsafe.Slice(values, int(numEntries))
+	for i := 0; i < int(numEntries); i++ {
+		toReturn[C.GoString(keySlice[i])] = C.GoString(valueSlice[i])
+	}
+	return toReturn, nil
+}
+
 // Returns the underlying OrtAllocator, or NULL for a nil Allocator, so callers
 // can treat "no allocator" and "nil allocator" the same way.
 func (a *Allocator) ortAllocator() *C.OrtAllocator {
